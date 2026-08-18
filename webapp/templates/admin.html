@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}Administration | {{ app_name }}{% endblock %}
+{% block body_class %}app-page admin-page{% endblock %}
+{% block content %}
+{% set ns = namespace(active=0, admins=0, blocked=0) %}
+{% for u in users %}
+    {% if u.is_active %}{% set ns.active = ns.active + 1 %}{% else %}{% set ns.blocked = ns.blocked + 1 %}{% endif %}
+    {% if u.is_admin %}{% set ns.admins = ns.admins + 1 %}{% endif %}
+{% endfor %}
+<div class="page">
+    <section class="hero hero-single">
+        <div class="panel hero-copy hero-copy-split">
+            <div class="hero-copy-main">
+                <p class="eyebrow">Administration</p>
+                <h1 class="page-title">Contrôle des accès</h1>
+                <p class="page-copy">Comptes, rôles et activation pilotés dans une logique de sécurité sobre et maîtrisée.</p>
+            </div>
+            <div class="hero-side-stack">
+                <span class="section-count">{{ users|length }} comptes</span>
+                <span class="hero-rail-note">Base locale</span>
+            </div>
+        </div>
+    </section>
+
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% for cat, m in msgs %}
+        <div class="flash {{ 'flash-err' if cat=='error' else 'flash-ok' }}" role="alert">{{ m }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <section class="summary-grid">
+        <article class="panel metric-card">
+            <span class="metric-label">Comptes</span>
+            <strong class="metric-value">{{ users|length }}</strong>
+            <p class="metric-note">Utilisateurs enregistrés dans la base AEGIS.</p>
+        </article>
+        <article class="panel metric-card">
+            <span class="metric-label">Actifs</span>
+            <strong class="metric-value">{{ ns.active }}</strong>
+            <p class="metric-note">Comptes actuellement autorisés à se connecter.</p>
+        </article>
+        <article class="panel metric-card">
+            <span class="metric-label">Admins</span>
+            <strong class="metric-value">{{ ns.admins }}</strong>
+            <p class="metric-note">Comptes disposant de tous les onglets.</p>
+        </article>
+        <article class="panel metric-card">
+            <span class="metric-label">Bloqués</span>
+            <strong class="metric-value">{{ ns.blocked }}</strong>
+            <p class="metric-note">Accès suspendus jusqu'à réactivation.</p>
+        </article>
+    </section>
+
+    <section class="panel section-panel">
+        <div class="section-head">
+            <div>
+                <p class="eyebrow eyebrow-muted">Provisioning</p>
+                <h2 class="section-title">Créer un compte</h2>
+                <p class="section-copy">Définir l'identifiant, le mot de passe et les onglets autorisés.</p>
+            </div>
+        </div>
+        <form method="POST" action="{{ url_for('admin_create') }}" class="create-form" autocomplete="off">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="create-row">
+                <div class="fld"><label for="create-username">Identifiant</label>
+                    <input type="text" id="create-username" name="username" required autocomplete="off"></div>
+                <div class="fld"><label for="create-password">Mot de passe (min. 8)</label>
+                    <input type="password" id="create-password" name="password" required minlength="8" autocomplete="new-password"></div>
+            </div>
+            <div class="fld">
+                <label>Onglets accessibles</label>
+                <div class="tabchecks">
+                    {% for key, lbl in all_tabs %}
+                    <label class="chk"><input type="checkbox" name="tabs" value="{{ key }}" checked> {{ lbl }}</label>
+                    {% endfor %}
+                    <label class="chk admin-chk"><input type="checkbox" name="is_admin"> Administrateur (tous onglets)</label>
+                </div>
+            </div>
+            <div class="admin-form-actions">
+                <p class="hint">Les comptes admin disposent automatiquement de tous les onglets.</p>
+                <button type="submit" class="btn-primary">Créer le compte</button>
+            </div>
+        </form>
+    </section>
+
+    <section class="panel section-panel">
+        <div class="section-head">
+            <div>
+                <p class="eyebrow eyebrow-muted">Alertes</p>
+                <h2 class="section-title">Destinataires e-mail</h2>
+            </div>
+        </div>
+        <form method="POST" action="{{ url_for('admin_recipient_add') }}" class="create-form" autocomplete="off">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="create-row">
+                <div class="fld"><label for="rcp-email">Ajouter une adresse e-mail</label>
+                    <input type="email" id="rcp-email" name="email" placeholder="prenom@exemple.com" required></div>
+            </div>
+            <div class="admin-form-actions">
+                <p class="hint">Ces adresses reçoivent les mêmes alertes que Telegram (armé, désarmé, intrusion…).</p>
+                <button type="submit" class="btn-primary">Ajouter</button>
+            </div>
+        </form>
+        <div class="recipients-list">
+            {% for r in recipients if r.kind == 'email' %}
+            <div class="recipient-row">
+                <span class="recipient-val">{{ r.value }}</span>
+                <form method="POST" action="{{ url_for('admin_recipient_delete', rid=r.id) }}"
+                      onsubmit="return confirm('Retirer {{ r.value }} des alertes ?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn-mini btn-danger">Retirer</button>
+                </form>
+            </div>
+            {% else %}
+            <p class="hint">Aucune adresse e-mail. Ajoutez-en une ci-dessus.</p>
+            {% endfor %}
+            {% set tg = recipients | selectattr('kind','equalto','telegram') | list %}
+            {% if tg %}
+            <p class="hint" style="margin-top:12px">Telegram : {{ tg|length }} destinataire(s) configuré(s).</p>
+            {% endif %}
+        </div>
+    </section>
+
+    <section class="panel section-panel">
+        <div class="section-head">
+            <div>
+                <p class="eyebrow eyebrow-muted">Comptes</p>
+                <h2 class="section-title">Utilisateurs enregistrés</h2>
+                <p class="section-copy">{{ users|length }} compte(s) pilotés depuis cette interface.</p>
+            </div>
+            <div class="section-count">{{ users|length }} comptes</div>
+        </div>
+        <div class="users">
+        {% for u in users %}
+            <article class="user-card {% if not u.is_active %}blocked{% endif %}">
+                <div class="user-head">
+                    <div class="user-identity">
+                        <div class="user-name-row">
+                            <span class="user-name">{{ u.username }}</span>
+                            {% if u.is_admin %}<span class="badge badge-admin">ADMIN</span>{% endif %}
+                            {% if u.is_active %}<span class="badge badge-on">Actif</span>
+                            {% else %}<span class="badge badge-off">Bloqué</span>{% endif %}
+                            {% if u.id == me %}<span class="badge badge-me">vous</span>{% endif %}
+                        </div>
+                        <div class="user-meta">
+                            <span>Créé : {{ u.created_at.replace('T',' ') }}</span>
+                            <span>{% if u.last_login %}Dernière connexion : {{ u.last_login.replace('T',' ') }}{% else %}Jamais connecté{% endif %}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <form method="POST" action="{{ url_for('admin_update', uid=u.id) }}" class="inline-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="tabs">
+                    <div class="section-subtitle">Visibilité applicative</div>
+                    <div class="tabchecks">
+                        {% for key, lbl in all_tabs %}
+                        <label class="chk {% if u.is_admin %}chk-dim{% endif %}">
+                            <input type="checkbox" name="tabs" value="{{ key }}"
+                                   {% if key in u.tab_list %}checked{% endif %}
+                                   {% if u.is_admin %}disabled{% endif %}> {{ lbl }}
+                        </label>
+                        {% endfor %}
+                        {% if not u.is_admin %}<button type="submit" class="btn-mini">Enregistrer onglets</button>
+                        {% else %}<span class="hint">admin = tous les onglets</span>{% endif %}
+                    </div>
+                </form>
+
+                <div class="user-actions">
+                    <div class="user-action-group">
+                        <div class="section-subtitle">Maintenance</div>
+                        <div class="user-action-row">
+                            <form method="POST" action="{{ url_for('admin_update', uid=u.id) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="action" value="toggle_active">
+                                <button type="submit" class="btn-mini {% if u.is_active %}btn-warn{% else %}btn-ok{% endif %}">
+                                    {{ 'Bloquer' if u.is_active else 'Débloquer' }}</button>
+                            </form>
+                            <form method="POST" action="{{ url_for('admin_update', uid=u.id) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="action" value="toggle_admin">
+                                <button type="submit" class="btn-mini">{{ 'Retirer admin' if u.is_admin else 'Promouvoir admin' }}</button>
+                            </form>
+                            <form method="POST" action="{{ url_for('admin_update', uid=u.id) }}" class="pw-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="action" value="password">
+                                <label for="password-{{ u.id }}" class="sr-only">Nouveau mot de passe pour {{ u.username }}</label>
+                                <input type="password" id="password-{{ u.id }}" name="password" placeholder="Nouveau mot de passe" minlength="8" autocomplete="new-password">
+                                <button type="submit" class="btn-mini">Réinitialiser</button>
+                            </form>
+                        </div>
+                    </div>
+                    {% if u.id != me %}
+                    <div class="user-action-group user-action-group-danger">
+                        <div class="section-subtitle">Zone sensible</div>
+                        <div class="user-action-row">
+                            <form method="POST" action="{{ url_for('admin_update', uid=u.id) }}"
+                                  onsubmit="return confirm('Supprimer définitivement « {{ u.username }} » ?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="action" value="delete">
+                                <button type="submit" class="btn-mini btn-danger btn-danger-solid">Supprimer définitivement</button>
+                            </form>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </article>
+        {% endfor %}
+        </div>
+    </section>
+</div>
+{% endblock %}

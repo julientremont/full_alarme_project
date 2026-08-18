@@ -1,13 +1,12 @@
 /* https://squidfunk.github.io/mkdocs-material/setup/changing-the-colors/#custom-colors */
 :root {
-    --md-primary-fg-color: #142146;
-    --md-accent-fg-color: #fc2c7f;
+    --md-primary-fg-color: #0a1016;
+    --md-accent-fg-color: #00c2ff;
 }
 
 /* Revert hue value to that of pre mkdocs-material v9.4.0 */
 [data-md-color-scheme="slate"] {
-    /* Hue taken from hsl of #142146, used for bg on website*/
-    --md-hue: 227;
+    --md-hue: 211;
     /* Increase the lightness by 5%, opacity by 0.2 */
     --md-default-fg-color: hsla(var(--md-hue), 15%, 95%, 1.0);
     --md-default-fg-color--light: hsla(var(--md-hue), 15%, 95%, 0.76);
@@ -21,13 +20,13 @@
     /* Increase the opacity of code to 1.0 */
     --md-code-fg-color: hsla(var(--md-hue), 18%, 86%, 1.0);
     --md-code-hl-comment-color: #666666;
-    --md-typeset-a-color: #65cccc;
+    --md-typeset-a-color: #33d4ff;
 }
 
 [data-md-color-scheme="default"] {
-    --md-hue: 227;
+    --md-hue: 211;
     --md-default-bg-color: hsla(var(--md-hue), 100%, 96%, 1);
-    --md-typeset-a-color: #65cccc;
+    --md-typeset-a-color: #008fbc;
 
     --md-code-fg-color: hsla(var(--md-hue), 18%, 86%, 1.0);
     --md-code-bg-color: #262a32;

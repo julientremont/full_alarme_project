@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+{% block title %}Détection IA | {{ app_name }}{% endblock %}
+{% block body_class %}app-page detection-page{% endblock %}
+{% block content %}
+<div class="page">
+    <section class="hero hero-single">
+        <div class="panel hero-copy hero-copy-split">
+            <div class="hero-copy-main">
+                <p class="eyebrow">Détection IA</p>
+                <h1 class="page-title">Vision YOLOv8</h1>
+                <p class="page-copy">Objets surveillés, seuil de confiance et sensibilité au mouvement. Ces réglages pilotent en direct la veille des caméras.</p>
+            </div>
+            <div class="hero-side-stack">
+                <span class="section-count" id="modelBadge">Modèle —</span>
+                <span class="model-state" id="modelState">Statut inconnu</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="summary-grid">
+        <article class="panel metric-card">
+            <span class="metric-label">Détections aujourd'hui</span>
+            <strong class="metric-value" id="statToday">--</strong>
+            <p class="metric-note">Captures YOLO enregistrées ce jour.</p>
+        </article>
+        <article class="panel metric-card">
+            <span class="metric-label">7 derniers jours</span>
+            <strong class="metric-value" id="stat7d">--</strong>
+            <p class="metric-note">Total des objets surveillés détectés.</p>
+        </article>
+        <article class="panel metric-card">
+            <span class="metric-label">Objets surveillés</span>
+            <strong class="metric-value" id="statWatched">--</strong>
+            <p class="metric-note">Classes actives sur les 4 disponibles.</p>
+        </article>
+        <article class="panel metric-card">
+            <span class="metric-label">Dernière détection</span>
+            <strong class="metric-value" id="statLast">--</strong>
+            <p class="metric-note" id="statLastNote">Aucune capture récente.</p>
+        </article>
+    </section>
+
+    <div class="detection-cols">
+        <section class="panel section-panel">
+            <div class="section-head">
+                <div>
+                    <p class="eyebrow eyebrow-muted">Réglages</p>
+                    <h2 class="section-title">Paramètres de détection</h2>
+                    <p class="section-copy">Appliqués immédiatement à l'orchestrateur lorsqu'ils sont enregistrés.</p>
+                </div>
+            </div>
+
+            <form id="detForm" class="det-form">
+                <div class="det-master">
+                    <label class="switch">
+                        <input type="checkbox" id="detEnabled" {% if config.enabled %}checked{% endif %}>
+                        <span class="switch-track"><span class="switch-thumb"></span></span>
+                    </label>
+                    <div class="det-master-copy">
+                        <span class="det-master-title">Surveillance IA</span>
+                        <span class="det-master-sub">Analyse YOLO sur mouvement lorsque l'alarme est armée.</span>
+                    </div>
+                </div>
+
+                <div class="det-field">
+                    <span class="det-field-label">Objets surveillés</span>
+                    <div class="obj-grid">
+                        {% for o in objects %}
+                        <label class="obj-toggle">
+                            <input type="checkbox" class="obj-check" value="{{ o.key }}" {% if config.objects[o.key] %}checked{% endif %}>
+                            <span class="obj-toggle-body">
+                                <span class="obj-name">{{ o.label }}</span>
+                                <span class="obj-cls">classe {{ o.cls }}</span>
+                            </span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="det-field">
+                    <div class="det-field-head">
+                        <span class="det-field-label">Seuil de confiance</span>
+                        <span class="det-field-value" id="confOut">{{ (config.confidence * 100)|round|int }} %</span>
+                    </div>
+                    <input type="range" id="confRange" min="10" max="95" step="5" value="{{ (config.confidence * 100)|round|int }}">
+                    <p class="det-hint">Plus élevé = moins de fausses alertes, mais des détections manquées possibles.</p>
+                </div>
+
+                <div class="det-field">
+                    <div class="det-field-head">
+                        <span class="det-field-label">Sensibilité au mouvement</span>
+                        <span class="det-field-value" id="motionOut">--</span>
+                    </div>
+                    <input type="range" id="motionRange" min="2000" max="60000" step="1000" value="{{ config.motion_sensitivity }}">
+                    <p class="det-hint">Seuil de différence d'images avant de lancer YOLO. Plus bas = plus sensible.</p>
+                </div>
+
+                <div class="det-actions">
+                    <button type="submit" class="btn-primary" id="detSave">Enregistrer</button>
+                    <p class="det-flash" id="detFlash" role="status" aria-live="polite" hidden></p>
+                </div>
+            </form>
+        </section>
+
+        <section class="panel section-panel">
+            <div class="section-head">
+                <div>
+                    <p class="eyebrow eyebrow-muted">Activité</p>
+                    <h2 class="section-title">Statistiques de détection</h2>
+                    <p class="section-copy">Dérivées des captures YOLO des 7 derniers jours.</p>
+                </div>
+            </div>
+
+            <div class="det-stat-block">
+                <span class="det-stat-title">Répartition par objet</span>
+                <div id="objBars" class="obj-bars"><p class="det-empty">Chargement…</p></div>
+            </div>
+
+            <div class="det-stat-block">
+                <span class="det-stat-title">7 derniers jours</span>
+                <div id="dayBars" class="day-bars" aria-hidden="true"></div>
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const OBJECTS = {{ objects|tojson }};
+const OBJ_LABEL = Object.fromEntries(OBJECTS.map((o) => [o.key, o.label]));
+
+const enabledEl = document.getElementById('detEnabled');
+const confRange = document.getElementById('confRange');
+const confOut = document.getElementById('confOut');
+const motionRange = document.getElementById('motionRange');
+const motionOut = document.getElementById('motionOut');
+const flash = document.getElementById('detFlash');
+const saveBtn = document.getElementById('detSave');
+
+function motionLabel(v) {
+  if (v <= 6000) return 'Très sensible';
+  if (v <= 15000) return 'Standard';
+  if (v <= 30000) return 'Peu sensible';
+  return 'Faible';
+}
+
+function syncConf() { confOut.textContent = `${confRange.value} %`; }
+function syncMotion() { motionOut.textContent = `${Number(motionRange.value).toLocaleString('fr-FR')} · ${motionLabel(Number(motionRange.value))}`; }
+confRange.addEventListener('input', syncConf);
+motionRange.addEventListener('input', syncMotion);
+syncConf();
+syncMotion();
+
+function watchedCount() {
+  return document.querySelectorAll('.obj-check:checked').length;
+}
+
+function showFlash(msg, ok) {
+  flash.textContent = msg;
+  flash.hidden = false;
+  flash.dataset.tone = ok ? 'ok' : 'error';
+}
+
+function fmtLast(iso) {
+  if (!iso) return null;
+  try {
+    const d = new Date(iso);
+    const day = d.toLocaleDateString('fr-FR', {day: '2-digit', month: 'short'});
+    const time = d.toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'});
+    return `${day} · ${time}`;
+  } catch (e) { return iso; }
+}
+
+function renderStats(stats) {
+  document.getElementById('statToday').textContent = stats.today ?? 0;
+  document.getElementById('stat7d').textContent = stats.total_7d ?? 0;
+  document.getElementById('statWatched').textContent = `${watchedCount()}/${OBJECTS.length}`;
+
+  const last = stats.last;
+  document.getElementById('statLast').textContent = last ? (fmtLast(last.iso) || '—') : '—';
+  document.getElementById('statLastNote').textContent = last && last.label
+    ? `Objet : ${last.label}.`
+    : 'Aucune capture récente.';
+
+  const by = stats.by_object || {};
+  const max = Math.max(1, ...OBJECTS.map((o) => by[o.key] || 0));
+  const total = OBJECTS.reduce((s, o) => s + (by[o.key] || 0), 0);
+  const objBars = document.getElementById('objBars');
+  if (!total) {
+    objBars.innerHTML = '<p class="det-empty">Aucune détection sur la période.</p>';
+  } else {
+    objBars.innerHTML = OBJECTS.map((o) => {
+      const n = by[o.key] || 0;
+      const pct = Math.round((n / max) * 100);
+      return `<div class="obj-bar">
+        <span class="obj-bar-name">${OBJ_LABEL[o.key]}</span>
+        <span class="obj-bar-track"><span class="obj-bar-fill" style="width:${pct}%"></span></span>
+        <span class="obj-bar-val">${n}</span>
+      </div>`;
+    }).join('');
+  }
+
+  const series = stats.series || [];
+  const dmax = Math.max(1, ...series.map((d) => d.count));
+  document.getElementById('dayBars').innerHTML = series.map((d) => {
+    const h = Math.round((d.count / dmax) * 100);
+    return `<div class="day-col" title="${d.count} détection(s)">
+      <span class="day-col-track"><span class="day-col-fill" style="height:${Math.max(4, h)}%"></span></span>
+      <span class="day-col-label">${d.label}</span>
+      <span class="day-col-val">${d.count}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderModel(model) {
+  const badge = document.getElementById('modelBadge');
+  const state = document.getElementById('modelState');
+  badge.textContent = `Modèle ${model.name || '—'}`;
+  if (!model.present) {
+    state.textContent = 'Modèle introuvable';
+  } else if (!enabledEl.checked) {
+    state.textContent = 'Surveillance IA désactivée';
+  } else if (model.armed) {
+    state.textContent = 'Actif · alarme armée';
+  } else {
+    state.textContent = 'Prêt · en veille (désarmé)';
+  }
+}
+
+async function load() {
+  try {
+    const r = await fetch('/api/detection', {headers: {'X-Requested-With': 'fetch'}});
+    if (r.status === 401 || r.redirected) { location.href = '/login'; return; }
+    const data = await r.json();
+    renderStats(data.stats || {});
+    renderModel(data.model || {});
+  } catch (e) { /* garder l'état */ }
+}
+
+document.querySelectorAll('.obj-check').forEach((c) => c.addEventListener('change', () => {
+  document.getElementById('statWatched').textContent = `${watchedCount()}/${OBJECTS.length}`;
+}));
+enabledEl.addEventListener('change', () => load());
+
+document.getElementById('detForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const objects = {};
+  document.querySelectorAll('.obj-check').forEach((c) => { objects[c.value] = c.checked; });
+  if (!Object.values(objects).some(Boolean)) {
+    showFlash('Au moins un objet doit rester surveillé.', false);
+    return;
+  }
+  const payload = {
+    enabled: enabledEl.checked,
+    confidence: Number(confRange.value) / 100,
+    motion_sensitivity: Number(motionRange.value),
+    objects
+  };
+  saveBtn.disabled = true;
+  flash.hidden = true;
+  try {
+    const r = await fetch('/api/detection', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': window.CSRF},
+      body: JSON.stringify(payload)
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || 'Échec de l\'enregistrement.');
+    showFlash('Réglages enregistrés et appliqués.', true);
+  } catch (e) {
+    showFlash(e.message || 'Action impossible, réessayez.', false);
+  } finally {
+    saveBtn.disabled = false;
+  }
+});
+
+load();
+setInterval(load, 8000);
+</script>
+{% endblock %}

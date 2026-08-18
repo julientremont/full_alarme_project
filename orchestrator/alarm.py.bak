@@ -1,0 +1,360 @@
+"""
+alarm.py — Orchestrateur alarme AEGIS (multi-caméras).
+
+Armé :
+  - Veille : chaque caméra compare 2 images toutes les 2 s ; si mouvement -> YOLO.
+  - Capteur d'ouverture -> YOLO direct sur la caméra de la pièce (mapping par pièce).
+  - Porte d'entrée : tempo 60 s avant déclenchement (le temps de désarmer).
+Alarme (personne détectée / ouverture hors entrée) :
+  - Sirène sur TOUTES les caméras (startManualAlarm).
+  - Notification une fois, photos + YOLO toutes les 10 s.
+  - Arrêt UNIQUEMENT au désarmement manuel via l'app (stop sirènes + privacy ON).
+
+MQTT : voir docs/05. Bus Mosquitto.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import threading
+import time
+
+import paho.mqtt.client as mqtt
+import yaml
+from dotenv import load_dotenv
+
+import notify
+from camera import Camera
+
+for vault in ("/home/j.tremont/.secrets/vault.env",
+              os.path.join(os.path.dirname(__file__), ".env")):
+    if os.path.exists(vault):
+        load_dotenv(vault)
+
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s")
+log = logging.getLogger("aegis.orch")
+
+MQTT_HOST = os.getenv("MQTT_HOST", "127.0.0.1")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+Z2M_BASE = os.getenv("MQTT_BASE_TOPIC", "zigbee2mqtt")
+MOTION_GAP = float(os.getenv("MOTION_GAP_S", "2"))
+ALARM_PHOTO_S = int(os.getenv("ALARM_PHOTO_S", "10"))
+ENTRY_DELAY_S = int(os.getenv("ENTRY_DELAY_S", "60"))
+ENTRY_SENSORS = set(os.getenv("ENTRY_SENSORS", "porte_entree").split(","))
+
+T_SET, T_STATE, T_EVENT, T_CAMERA = (
+    "aegis/alarm/set", "aegis/alarm/state", "aegis/alarm/event", "aegis/camera/state")
+T_DETECT = "aegis/detection/config"     # réglages YOLO diffusés par l'app (retenu)
+
+DEVICES_YAML = os.path.join(os.path.dirname(__file__), "..", "webapp", "devices.yaml")
+
+
+def _registry():
+    return yaml.safe_load(open(DEVICES_YAML))["groups"]
+
+
+def _build_cameras():
+    # Contrôle pytapo (privacy/sirène) = compte CLOUD Tapo (marche pour toutes les caméras).
+    # RTSP (détection) = compte LOCAL de la caméra (peut différer par caméra).
+    creds = dict(cloud_user=os.getenv("TAPO_CLOUD_EMAIL") or os.getenv("TAPO_USER"),
+                 cloud_password=os.getenv("TAPO_CLOUD_PASSWORD") or os.getenv("TAPO_PASSWORD"),
+                 rtsp_user=os.getenv("TAPO_LOCAL_USER"), rtsp_password=os.getenv("TAPO_LOCAL_PASSWORD"),
+                 stream=os.getenv("TAPO_STREAM", "stream1"))
+    cams = {}
+    for g in _registry():
+        if g["id"] != "cameras":
+            continue
+        for d in g["devices"]:
+            if d.get("real") and d.get("host"):
+                c = dict(creds)
+                # override RTSP local par caméra si présent dans devices.yaml
+                if d.get("rtsp_user"):
+                    c["rtsp_user"] = d["rtsp_user"]
+                if d.get("rtsp_password"):
+                    c["rtsp_password"] = d["rtsp_password"]
+                # certaines caméras (ex: salon) n'acceptent que le compte LOCAL, pas le cloud
+                if d.get("ctrl_local"):
+                    c["cloud_user"] = os.getenv("TAPO_USER")
+                    c["cloud_password"] = os.getenv("TAPO_PASSWORD")
+                    c["ctrl_cloud"] = False
+                cams[d["key"]] = Camera(key=d["key"], label=d.get("label", d["key"]),
+                                        room=d.get("room", ""), host=d["host"], **c)
+    return cams
+
+
+def _sensor_maps(cameras):
+    labels, sensor_cam = {}, {}
+    room_to_cam = {c.room: c for c in cameras.values() if c.room}
+    for g in _registry():
+        for d in g.get("devices", []):
+            labels[d["key"]] = d.get("label", d["key"])
+            if d.get("source") == "zigbee" and d.get("kind") == "contact":
+                cam = room_to_cam.get(d.get("room"))
+                if cam:
+                    sensor_cam[d["key"]] = cam
+    return labels, sensor_cam
+
+
+class Orchestrator:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.armed = False
+        self.alarm_active = False
+        self.detection_enabled = True         # surveillance IA (pilotée par l'app)
+        self.trigger_cam: Camera | None = None
+        self.since = time.time()
+        self._got_command = False
+        self._gen = 0                         # invalide les threads de veille au désarmement
+        self._contact_cache: dict[str, bool] = {}
+        self._entry_timers: dict[str, threading.Timer] = {}
+
+        self.cameras = _build_cameras()
+        self.sensor_labels, self.sensor_cam = _sensor_maps(self.cameras)
+        log.info("Caméras réelles : %s", [c.label for c in self.cameras.values()] or "aucune")
+
+        self.client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+                                  client_id="aegis-orchestrator")
+        self.client.on_connect = self._on_connect
+        self.client.on_message = self._on_message
+
+    # ─── MQTT ──────────────────────────────────────────────────────────────
+    def _on_connect(self, c, u, f, rc, props=None):
+        log.info("MQTT connecté (rc=%s)", rc)
+        c.subscribe(T_SET)
+        c.subscribe(T_DETECT)                # réglages détection (retenu)
+        c.subscribe(f"{Z2M_BASE}/+")
+        c.subscribe("aegis/notify")          # demandes de notif d'autres composants (app)
+
+    def _on_message(self, c, u, msg):
+        try:
+            payload = msg.payload.decode("utf-8", "replace")
+        except Exception:
+            return
+        if msg.topic == T_SET:
+            self._handle_set(payload)
+        elif msg.topic == T_DETECT:
+            self._handle_detection(payload)
+        elif msg.topic == "aegis/notify":
+            self._handle_notify(payload)
+        elif msg.topic.startswith(f"{Z2M_BASE}/"):
+            self._handle_zigbee(msg.topic, payload)
+
+    def _handle_notify(self, payload):
+        try:
+            d = json.loads(payload)
+        except Exception:
+            return
+        title = d.get("title")
+        line = d.get("line", "")
+        if title:
+            notify.send_alert(title, line, key=d.get("key", title),
+                              force=bool(d.get("force", True)))
+
+    def _handle_set(self, payload):
+        try:
+            data = json.loads(payload)
+        except Exception:
+            return
+        self._got_command = True
+        if data.get("state") == "armed":
+            self.arm(data.get("by", "?"))
+        elif data.get("state") == "disarmed":
+            self.disarm(data.get("by", "?"))
+
+    def _handle_detection(self, payload):
+        """Applique les réglages YOLO diffusés par l'app (objets, confiance,
+        sensibilité mouvement, activation de la surveillance IA)."""
+        try:
+            d = json.loads(payload)
+        except Exception:
+            return
+        if not isinstance(d, dict):
+            return
+        if "enabled" in d:
+            self.detection_enabled = bool(d["enabled"])
+        classes = d.get("classes")
+        conf = d.get("confidence")
+        motion_seuil = d.get("motion_sensitivity")
+        for cam in self.cameras.values():
+            cam.apply_detection_config(
+                classes=classes if isinstance(classes, list) else None,
+                conf=conf, motion_seuil=motion_seuil)
+        log.info("Réglages détection appliqués : IA=%s conf=%s seuil=%s classes=%s",
+                 self.detection_enabled, conf, motion_seuil, classes)
+
+    def _handle_zigbee(self, topic, payload):
+        name = topic[len(Z2M_BASE) + 1:]
+        if "/" in name or name.startswith("bridge"):
+            return
+        try:
+            data = json.loads(payload)
+        except Exception:
+            return
+        if not isinstance(data, dict) or "contact" not in data:
+            return
+        closed = bool(data["contact"])
+        prev = self._contact_cache.get(name)
+        self._contact_cache[name] = closed
+        if prev and not closed:               # front d'ouverture uniquement
+            with self.lock:
+                armed, alarm = self.armed, self.alarm_active
+            if armed and not alarm:
+                self._on_open(name)
+
+    # ─── transitions armé/désarmé ────────────────────────────────────────────
+    def arm(self, by="?"):
+        with self.lock:
+            if self.armed:
+                return
+            self.armed = True
+            self.alarm_active = False
+            self.since = time.time()
+            self._gen += 1
+            gen = self._gen
+        for cam in self.cameras.values():
+            cam.set_privacy(False)
+            self.publish_camera(cam, reachable=True, privacy=False)
+        self.publish_state()
+        self.publish_event("armed", "Alarme armée", f"par {by}")
+        notify.send_alert("Alarme armée", f"L'alarme a été armée par {by}.",
+                          key="armed", force=True)
+        log.info("ALARME ARMÉE (par %s)", by)
+        for cam in self.cameras.values():
+            threading.Thread(target=self._veille, args=(cam, gen), daemon=True).start()
+
+    def disarm(self, by="?"):
+        with self.lock:
+            was_armed = self.armed
+            was_alarm = self.alarm_active
+            self.armed = False
+            self.alarm_active = False
+            self.trigger_cam = None
+            self._gen += 1
+            timers = list(self._entry_timers.values())
+            self._entry_timers.clear()
+        for t in timers:
+            t.cancel()
+        for cam in self.cameras.values():
+            if was_alarm:
+                cam.stop_siren()               # ne couper que si une alarme tournait
+            cam.set_privacy(True)
+            self.publish_camera(cam, reachable=True, privacy=True)
+        self.publish_state()
+        if was_armed:
+            self.publish_event("disarmed", "Alarme désarmée", f"par {by}")
+            notify.send_alert("Alarme désarmée", f"L'alarme a été désarmée par {by}.",
+                              key="disarmed", force=True)
+            log.info("ALARME DÉSARMÉE (par %s)", by)
+
+    # ─── veille (1 thread par caméra) ────────────────────────────────────────
+    def _veille(self, cam: Camera, gen: int):
+        log.info("Veille démarrée sur %s", cam.label)
+        while True:
+            with self.lock:
+                if gen != self._gen or not self.armed:
+                    return
+                if self.alarm_active:
+                    time.sleep(1)
+                    continue
+            with self.lock:
+                if not self.detection_enabled:      # surveillance IA désactivée depuis l'app
+                    time.sleep(2)
+                    continue
+            moved, frame = cam.motion(MOTION_GAP)
+            with self.lock:
+                if gen != self._gen or not self.armed or self.alarm_active:
+                    continue
+            if moved and cam.detect(frame):
+                self.trigger_alarm(cam, "Personne détectée", f"caméra {cam.label}")
+
+    # ─── ouverture capteur ───────────────────────────────────────────────────
+    def _on_open(self, sensor):
+        label = self.sensor_labels.get(sensor, sensor.replace("_", " ").title())
+        cam = self.sensor_cam.get(sensor) or self.trigger_cam or next(iter(self.cameras.values()), None)
+        if sensor in ENTRY_SENSORS:
+            log.warning("Ouverture ENTRÉE %s — tempo %ds avant alarme", label, ENTRY_DELAY_S)
+            self.publish_event("door", "Entrée ouverte", f"{label} — tempo {ENTRY_DELAY_S}s")
+            t = threading.Timer(ENTRY_DELAY_S, self._entry_fire, args=(sensor, label, cam))
+            t.daemon = True
+            with self.lock:
+                self._entry_timers[sensor] = t
+            t.start()
+        else:
+            self.trigger_alarm(cam, "Ouverture détectée", label)
+
+    def _entry_fire(self, sensor, label, cam):
+        with self.lock:
+            self._entry_timers.pop(sensor, None)
+            if not self.armed or self.alarm_active:
+                return
+        log.warning("Tempo entrée écoulée sans désarmement → alarme")
+        self.trigger_alarm(cam, "Intrusion (entrée)", label)
+
+    # ─── alarme ──────────────────────────────────────────────────────────────
+    def trigger_alarm(self, cam: Camera | None, label, detail):
+        with self.lock:
+            if not self.armed or self.alarm_active:
+                return
+            self.alarm_active = True
+            self.trigger_cam = cam
+            gen = self._gen
+        log.warning("🚨 ALARME : %s (%s)", label, detail)
+        for c in self.cameras.values():
+            c.start_siren()
+        self.publish_state()
+        self.publish_event("intrusion", label, detail)
+        notify.send_alert("Alerte intrusion", f"{label} — {detail}.",
+                          key="intrusion", force=True)
+        threading.Thread(target=self._alarm_loop, args=(cam, gen), daemon=True).start()
+
+    def _alarm_loop(self, cam: Camera | None, gen: int):
+        while True:
+            with self.lock:
+                if gen != self._gen or not self.alarm_active:
+                    return
+            if cam is not None:
+                cam.snapshot_detect(save=True)      # photo + YOLO
+            for _ in range(ALARM_PHOTO_S):
+                with self.lock:
+                    if gen != self._gen or not self.alarm_active:
+                        return
+                time.sleep(1)
+
+    # ─── publications ─────────────────────────────────────────────────────────
+    def publish_state(self):
+        with self.lock:
+            mode = "alarm" if self.alarm_active else "idle"
+            payload = {"state": "armed" if self.armed else "disarmed",
+                       "mode": mode, "since": self.since}
+        self.client.publish(T_STATE, json.dumps(payload), retain=True)
+
+    def publish_event(self, etype, label, detail=""):
+        self.client.publish(T_EVENT, json.dumps(
+            {"type": etype, "label": label, "detail": detail, "ts": time.time()}))
+
+    def publish_camera(self, cam: Camera, reachable: bool, privacy: bool):
+        self.client.publish(f"aegis/camera/{cam.key}/state", json.dumps(
+            {"key": cam.key, "label": cam.label, "reachable": bool(reachable),
+             "privacy": bool(privacy), "ts": time.time()}), retain=True)
+
+    # ─── run ──────────────────────────────────────────────────────────────────
+    def run(self):
+        self.client.reconnect_delay_set(min_delay=1, max_delay=30)
+        self.client.connect_async(MQTT_HOST, MQTT_PORT, keepalive=60)
+        self.client.loop_start()
+        log.info("Orchestrateur AEGIS démarré (%d caméra(s))", len(self.cameras))
+        time.sleep(5)                          # laisser arriver l'état retenu
+        if not self._got_command:
+            log.info("Aucune commande retenue — démarrage désarmé")
+            for cam in self.cameras.values():
+                cam.set_privacy(True)
+                self.publish_camera(cam, reachable=True, privacy=True)
+            self.publish_state()
+        while True:
+            time.sleep(3600)
+
+
+if __name__ == "__main__":
+    Orchestrator().run()

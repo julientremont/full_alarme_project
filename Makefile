@@ -1,7 +1,5 @@
 SHELL := /bin/bash
 
-PYTHON_VERSION := 3.11
-
 # Package customization - users can override this
 PACKAGE_NAME ?= boilerplate-datascience
 
@@ -33,55 +31,47 @@ customize-package:
 		echo "ℹ️  Using default package name. Run with PACKAGE_NAME to customize."; \
 	fi
 
-# help: setup					- Create a virtual environment and install dependencies
+# help: setup					- Sync the development environment with uv
 .PHONY: setup
-setup: customize-package create-venv install-dev-requirements
+setup: install-dev-requirements
 
-ENV_NAME := $(shell echo $(notdir $(CURDIR)) | sed 's/^[0-9]*-//' | tr '[:upper:]' '[:lower:]')
-
-.PHONY : create-venv, install-dev-requirements, install-requirements
-create-venv:
-	@if ! pyenv virtualenvs | grep -q $(ENV_NAME); then pyenv virtualenv $(ENV_NAME); \
-	else echo "virtualenv already exists"; fi
-	# Set virtualenv as local
-	@pyenv local $(ENV_NAME)
-	@echo "✅ Virtualenv $(ENV_NAME) created and set as local"
-
+.PHONY : install-dev-requirements install-requirements
 install-dev-requirements:
-	@pip install --upgrade pip --quiet
-	@pip install -r requirements.txt
-	@pip install -e ".[dev]"
-	@echo "✅ Requirements installed"
+	@uv sync --extra dev
+	@echo "✅ Development dependencies synced"
 
 install-requirements:
-	@pip install --upgrade pip --quiet
-	@pip install -r requirements.txt
-	@pip install .
-	@echo "✅ Requirements installed"
+	@uv sync
+	@echo "✅ Runtime dependencies synced"
 
 # help: install_precommit			- Install pre-commit hooks
 .PHONY: install_precommit
 install_precommit:
-	@pre-commit install -t pre-commit
-	@pre-commit install -t pre-push
+	@uv run pre-commit install -t pre-commit
+	@uv run pre-commit install -t pre-push
 
 # help: format			- format code using the precommits
 .PHONY: format
 format:
-	@pre-commit run -a
+	@uv run pre-commit run -a
 
 # help: serve_docs_locally			- Serve docs locally on port 8001
 .PHONY: serve_docs_locally
 serve_docs_locally:
-	@mkdocs serve --livereload -a localhost:8001
+	@uv run --extra dev mkdocs serve --livereload -a localhost:8001
+
+# help: build_docs			- Build documentation locally
+.PHONY: build_docs
+build_docs:
+	@uv run --extra dev mkdocs build
 
 # help: deploy_docs				- Deploy documentation to GitHub Pages
 .PHONY: deploy_docs
 deploy_docs:
-	@mkdocs build
-	@mkdocs gh-deploy
+	@$(MAKE) build_docs
+	@uv run --extra dev mkdocs gh-deploy
 
 # help: run_tests			- Run repository's tests
 .PHONY: run_tests
 run_tests:
-	@pytest tests/
+	@uv run pytest tests/

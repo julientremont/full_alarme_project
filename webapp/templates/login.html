@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connexion | {{ app_name }}</title>
+    <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+    <link href="https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,700,900&display=swap" rel="stylesheet">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ asset_v }}">
+</head>
+<body class="login-page">
+    <div class="auth-shell">
+        <section class="panel auth-card">
+            <div class="auth-mark-wrap">
+                <div class="auth-mark">
+                    <img src="{{ url_for('static', filename='aegis-mark.svg') }}" alt="" class="brand-mark" decoding="async">
+                </div>
+            </div>
+
+            <div class="auth-head">
+                <p class="auth-wordmark">AEGIS</p>
+                <h1 class="auth-title">Connexion</h1>
+                <p class="auth-copy">Supervision alarme · maison</p>
+            </div>
+
+            {% if error %}<div class="error-msg" role="alert">{{ error }}</div>{% endif %}
+
+            <form method="POST" autocomplete="off" class="auth-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="form-group">
+                    <label for="username">Identifiant</label>
+                    <input type="text" id="username" name="username" required autofocus autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="password">Mot de passe</label>
+                    <input type="password" id="password" name="password" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="login-btn">Se connecter</button>
+            </form>
+
+            <p class="auth-footline">Raspberry Pi 5 · Zigbee2MQTT · Flask sécurisé</p>
+        </section>
+    </div>
+</body>
+</html>

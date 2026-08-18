@@ -1,0 +1,420 @@
+{% extends "base.html" %}
+{% block title %}Tableau de bord | {{ app_name }}{% endblock %}
+{% block body_class %}app-page dashboard-page{% endblock %}
+{% block content %}
+<div class="page dashboard-page-wrap">
+    <section class="dashboard-top">
+        <div class="panel command-panel">
+            <div class="command-head">
+                <div>
+                    <p class="eyebrow">Maison</p>
+                    <h1 class="page-title">Supervision</h1>
+                </div>
+                <div class="legend legend-tight">
+                    <span class="lg"><i class="dot c-green"></i>OK</span>
+                    <span class="lg"><i class="dot c-orange"></i>Ouvert</span>
+                    <span class="lg"><i class="dot c-red"></i>Hors ligne</span>
+                </div>
+            </div>
+
+            <div class="command-grid">
+                <section class="protection-core" aria-labelledby="securityHeadline">
+                    <p class="command-label">Protection active</p>
+                    <div class="core-emblem">
+                        <span class="core-orbit orbit-one"></span>
+                        <span class="core-orbit orbit-two"></span>
+                        <span class="core-orbit orbit-three"></span>
+                        <span class="core-mark"><img src="{{ url_for('static', filename='aegis-mark.svg') }}" alt="" class="brand-mark" decoding="async"></span>
+                    </div>
+                    <strong class="protection-title" id="securityHeadline">Synchronisation en attente</strong>
+                    <p class="protection-copy" id="securitySubline">Analyse du réseau et des points d'accès en cours.</p>
+                    <div class="core-state-row">
+                        <span class="state-pill state-pill-neutral" id="securityStatePill">Analyse</span>
+                        <span class="state-pill state-pill-neutral" id="bridgeStatePill">Bridge</span>
+                    </div>
+                </section>
+
+                <section class="command-metrics" aria-label="Indicateurs synthétiques">
+                    <article class="panel metric-card metric-card-compact">
+                        <span class="metric-label">Capteurs</span>
+                        <strong class="metric-value" id="activeSensors">--</strong>
+                        <p class="metric-note">Joignables</p>
+                    </article>
+                    <article class="panel metric-card metric-card-compact">
+                        <span class="metric-label">Routeurs</span>
+                        <strong class="metric-value" id="routerCount">--</strong>
+                        <p class="metric-note">Maillage</p>
+                    </article>
+                    <article class="panel metric-card metric-card-compact">
+                        <span class="metric-label">Caméras</span>
+                        <strong class="metric-value" id="cameraCount">--</strong>
+                        <p class="metric-note">Préparées</p>
+                    </article>
+                    <article class="panel metric-card metric-card-compact">
+                        <span class="metric-label">Réseau</span>
+                        <strong class="metric-value" id="networkHealth">--</strong>
+                        <p class="metric-note">Nominal</p>
+                    </article>
+                </section>
+            </div>
+        </div>
+
+    </section>
+
+    <div id="groups" class="groups dashboard-groups" aria-busy="true">
+        <section class="panel section-panel">
+            <div class="section-head">
+                <div>
+                    <p class="eyebrow eyebrow-muted">Synchronisation</p>
+                    <h2 class="section-title">Chargement de l'état matériel</h2>
+                    <p class="section-copy">Connexion à l'API de supervision en cours...</p>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const ICON_SPRITE = {{ icons_sprite|tojson }};
+const KNOWN_ICONS = new Set(['antenna', 'router', 'siren', 'bell', 'camera', 'door', 'window', 'plug', 'dot']);
+const CAN_CONTROL = {{ ('controle' in nav_tabs)|tojson }};
+const EVENT_LABELS = {
+  open: {t: 'Ouverture', c: 'orange'},
+  close: {t: 'Fermeture', c: 'blue'},
+  armed: {t: 'Armé', c: 'green'},
+  disarmed: {t: 'Désarmé', c: 'gray'},
+  online: {t: 'En ligne', c: 'green'},
+  offline: {t: 'Hors ligne', c: 'red'},
+  alert: {t: 'Alerte', c: 'red'}
+};
+
+function icon(name) {
+  const safeName = String(name || '').replace(/[^a-z0-9_-]/gi, '');
+  const iconName = KNOWN_ICONS.has(safeName) ? safeName : 'dot';
+  return `<svg class="icon icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="${ICON_SPRITE}#icon-${iconName}"></use></svg>`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[char]);
+}
+
+function metricChip(label) {
+  return `<span class="meta-chip">${escapeHtml(label)}</span>`;
+}
+
+function emptyState(title, copy, badge) {
+  return `<div class="empty-state compact"><span class="empty-badge">${escapeHtml(badge)}</span><p class="empty-title">${escapeHtml(title)}</p><p class="empty-copy">${escapeHtml(copy)}</p></div>`;
+}
+
+function assetCard(device) {
+  const extra = device.extra || {};
+  const meta = [];
+  if (device.status === 'waiting') {
+    meta.push('Aucune télémétrie');
+  }
+  if (extra.lqi != null) {
+    meta.push(`LQI ${extra.lqi}`);
+  }
+  if (extra.battery != null) {
+    meta.push(`Batterie ${extra.battery}%`);
+  }
+  if (extra.power != null && extra.power !== 0) {
+    meta.push(`${extra.power} W`);
+  }
+  if (extra.energy_today != null) {
+    meta.push(`${extra.energy_today} kWh auj.`);
+  }
+  if (extra.rssi != null) {
+    meta.push(`${extra.rssi} dBm`);
+  }
+  if (device.status === 'unknown' && !meta.length) {
+    meta.push('Matériel à intégrer');
+  }
+
+  const control = (CAN_CONTROL && device.controllable)
+    ? `<button type="button" class="plug-toggle ${device.on ? 'is-on' : ''}" data-key="${escapeHtml(device.key)}" data-on="${device.on ? '1' : '0'}">${device.on ? 'Éteindre' : 'Allumer'}</button>`
+    : '';
+
+  return `<article class="dev asset-card c-${escapeHtml(device.color)}">
+    <div class="dev-top">
+      <div class="dev-ic">${icon(device.icon)}</div>
+      <div class="dev-body">
+        <div class="dev-label-row">
+          <div>
+            <div class="dev-label">${escapeHtml(device.label)}</div>
+            <div class="dev-room">${escapeHtml(device.room || 'Zone non renseignée')}</div>
+          </div>
+          <span class="pill c-${escapeHtml(device.color)}">${escapeHtml(device.text)}</span>
+        </div>
+      </div>
+    </div>
+    <div class="dev-bottom">${meta.map(metricChip).join('')}${control}</div>
+  </article>`;
+}
+
+function sensorCard(device) {
+  const extra = device.extra || {};
+  const meta = [];
+  if (extra.lqi != null) {
+    meta.push(`LQI ${extra.lqi}`);
+  }
+  if (extra.battery != null) {
+    meta.push(`Batterie ${extra.battery}%`);
+  }
+  if (device.status === 'waiting') {
+    meta.push('En attente');
+  }
+  return `<article class="sensor-card c-${escapeHtml(device.color)}">
+    <div class="sensor-card-top">
+      <div class="sensor-ic">${icon(device.icon)}</div>
+      <div class="sensor-copy">
+        <div class="sensor-name">${escapeHtml(device.label)}</div>
+        <div class="sensor-room">${escapeHtml(device.room || 'Zone non renseignée')}</div>
+      </div>
+    </div>
+    <div class="sensor-foot">
+      <span class="pill c-${escapeHtml(device.color)}">${escapeHtml(device.text)}</span>
+      ${meta.map(metricChip).join('')}
+    </div>
+  </article>`;
+}
+
+function computeStats(groups) {
+  const counters = {total: 0, nominal: 0, watch: 0, install: 0, open: 0, offline: 0, waiting: 0, activeSensors: 0, routerCount: 0, cameraCount: 0, health: 0};
+  const byGroup = Object.fromEntries(groups.map((group) => [group.id, group.devices]));
+  for (const group of groups) {
+    for (const device of group.devices) {
+      counters.total += 1;
+      if (device.status === 'online' || device.status === 'closed') {
+        counters.nominal += 1;
+      } else if (device.status === 'open' || device.status === 'offline' || device.status === 'waiting') {
+        counters.watch += 1;
+      } else if (device.status === 'unknown') {
+        counters.install += 1;
+      }
+      if (device.status === 'open') {
+        counters.open += 1;
+      }
+      if (device.status === 'offline') {
+        counters.offline += 1;
+      }
+      if (device.status === 'waiting') {
+        counters.waiting += 1;
+      }
+    }
+  }
+
+  const sensors = byGroup.capteurs || [];
+  const infrastructure = byGroup.infrastructure || [];
+  const cameras = byGroup.cameras || [];
+  counters.activeSensors = sensors.filter((device) => device.status === 'closed' || device.status === 'open').length;
+  counters.routerCount = infrastructure.filter((device) => device.icon === 'router').length;
+  counters.cameraCount = cameras.length;
+  const trackable = Math.max(counters.total - counters.install, 1);
+  counters.health = `${Math.round((counters.nominal / trackable) * 100)}%`;
+  return counters;
+}
+
+function setText(id, value) {
+  const element = document.getElementById(id);
+  if (element) {
+    element.textContent = value;
+  }
+}
+
+function formatClock(date) {
+  return new Intl.DateTimeFormat('fr-FR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  }).format(date);
+}
+
+function formatEventTime(ts) {
+  try {
+    return new Date(ts).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'});
+  } catch (error) {
+    return ts;
+  }
+}
+
+function setSyncState(status, meta, tone) {
+  const text = document.getElementById('dashboardSyncText');
+  const detail = document.getElementById('dashboardSyncMeta');
+  const wrap = document.getElementById('dashboardSyncState');
+  if (text) {
+    text.textContent = status;
+  }
+  if (detail) {
+    detail.textContent = meta;
+  }
+  if (wrap) {
+    wrap.dataset.state = tone;
+  }
+}
+
+function setStatePill(id, label, tone) {
+  const element = document.getElementById(id);
+  if (!element) {
+    return;
+  }
+  element.textContent = label;
+  element.className = `state-pill state-pill-${tone}`;
+}
+
+function deriveProtectionState(summary, counters) {
+  if (!(summary && summary.mqtt && summary.bridge)) {
+    return {
+      title: 'Réseau dégradé',
+      copy: 'Le pont Zigbee ne remonte plus un état complet. La dernière vue connue reste affichée.',
+      tone: 'alert',
+      pill: 'ALERTE',
+      bridgeLabel: 'Bridge indisponible',
+      bridgeTone: 'alert'
+    };
+  }
+
+  if (counters.open > 0 || counters.offline > 0) {
+    return {
+      title: 'Surveillance renforcée',
+      copy: `${counters.open} point(s) ouvert(s) · ${counters.offline} équipement(s) hors ligne.`,
+      tone: counters.open > 0 ? 'warning' : 'alert',
+      pill: counters.open > 0 ? 'OUVERT' : 'ALERTE',
+      bridgeLabel: 'Bridge en ligne',
+      bridgeTone: 'safe'
+    };
+  }
+
+  if (counters.waiting > 0 || counters.install > 0) {
+    return {
+      title: 'Couverture en cours',
+      copy: `${counters.waiting + counters.install} point(s) en attente ou à intégrer dans la supervision.`,
+      tone: 'neutral',
+      pill: 'VEILLE',
+      bridgeLabel: 'Bridge en ligne',
+      bridgeTone: 'safe'
+    };
+  }
+
+  return {
+    title: 'Maison sécurisée',
+    copy: 'Tous les points suivis remontent un état nominal et la supervision reste stable.',
+    tone: 'safe',
+    pill: 'FERMÉ',
+    bridgeLabel: 'Bridge en ligne',
+    bridgeTone: 'safe'
+  };
+}
+
+function previewRow(event) {
+  const meta = EVENT_LABELS[event.event] || {t: event.event, c: 'gray'};
+  return `<article class="event-preview-item c-${meta.c}">
+    <span class="event-preview-dot c-${meta.c}"></span>
+    <div class="event-preview-body">
+      <div class="event-preview-top">
+        <span class="event-preview-name">${escapeHtml(event.device || event.category || 'Système')}</span>
+        <span class="event-preview-tag c-${meta.c}">${escapeHtml(meta.t)}</span>
+      </div>
+      <div class="event-preview-meta">${escapeHtml(formatEventTime(event.ts))}${event.detail ? ` · ${escapeHtml(event.detail)}` : ''}</div>
+    </div>
+  </article>`;
+}
+
+function renderEventPreview(events) {
+  const element = document.getElementById('eventPreview');
+  if (!element) {
+    return;
+  }
+  element.innerHTML = events.length
+    ? events.slice(0, 4).map(previewRow).join('')
+    : emptyState('Aucun événement récent', 'Le journal se remplira dès qu\'un changement terrain ou système sera détecté.', 'Journal calme');
+}
+
+function renderGroup(group) {
+  const sensorGroup = group.id === 'capteurs';
+  const groupMeta = {
+    infrastructure: {eyebrow: 'Infrastructure', copy: 'Bridge, coordinateur et routeurs du maillage Zigbee.'},
+    securite: {eyebrow: 'Protection', copy: 'Sirène, sonnette et éléments critiques de la sécurité maison.'},
+    cameras: {eyebrow: 'Vidéo', copy: 'Préparation des points vidéo et de la couverture caméra.'},
+    capteurs: {eyebrow: 'Périmètre', copy: 'Lecture dense des accès, ouvertures et état du périmètre.'}
+  };
+  const meta = groupMeta[group.id] || {eyebrow: sensorGroup ? 'Périmètre' : 'Infrastructure'};
+  const cards = group.devices.map((device) => sensorGroup ? sensorCard(device) : assetCard(device)).join('');
+  return `<section class="panel section-panel device-group device-group-${escapeHtml(group.id)}" id="group-${escapeHtml(group.id)}">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow eyebrow-muted">${escapeHtml(meta.eyebrow)}</p>
+        <h2 class="section-title">${escapeHtml(group.label)}</h2>
+      </div>
+    </div>
+    <div class="${sensorGroup ? 'sensor-grid' : 'grid asset-grid'}">${cards}</div>
+  </section>`;
+}
+
+async function refresh() {
+  const groups = document.getElementById('groups');
+  try {
+    groups?.setAttribute('aria-busy', 'true');
+    setSyncState('Actualisation en cours', 'Récupération du dernier état matériel.', 'loading');
+    const stateResponse = await fetch('/api/state', {headers: {'X-Requested-With': 'fetch'}});
+    if (stateResponse.status === 401 || stateResponse.redirected) {
+      window.location.href = '/login';
+      return;
+    }
+
+    const data = await stateResponse.json();
+    document.getElementById('groups').innerHTML = data.groups.map(renderGroup).join('');
+
+    const counters = computeStats(data.groups);
+    const protection = deriveProtectionState(data.summary || {}, counters);
+    setText('activeSensors', counters.activeSensors);
+    setText('routerCount', counters.routerCount);
+    setText('cameraCount', counters.cameraCount);
+    setText('networkHealth', counters.health);
+    setText('securityHeadline', protection.title);
+    setText('securitySubline', protection.copy);
+    setStatePill('securityStatePill', protection.pill, protection.tone);
+    setStatePill('bridgeStatePill', protection.bridgeLabel, protection.bridgeTone);
+    window.updateSystemStatus?.(data.summary || {});
+    setSyncState('Données à jour', `Dernière synchronisation à ${formatClock(new Date())}.`, 'ok');
+  } catch (error) {
+    setSyncState('Erreur réseau', 'Le dernier état affiché est conservé.', 'error');
+  } finally {
+    groups?.setAttribute('aria-busy', 'false');
+  }
+}
+
+refresh();
+setInterval(refresh, 3000);
+
+// Contrôle des prises (délégation sur la grille)
+document.getElementById('groups')?.addEventListener('click', async (event) => {
+  const btn = event.target.closest('.plug-toggle');
+  if (!btn) return;
+  const key = btn.dataset.key;
+  const target = btn.dataset.on === '1' ? false : true;
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    const r = await fetch(`/api/plug/${encodeURIComponent(key)}/set`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': window.CSRF},
+      body: JSON.stringify({on: target})
+    });
+    if (r.status === 401 || r.redirected) { location.href = '/login'; return; }
+    setTimeout(refresh, 900);
+  } catch (e) {
+    btn.disabled = false;
+  }
+});
+</script>
+{% endblock %}

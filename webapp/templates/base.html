@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ app_name }}{% endblock %}</title>
+    <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+    <link href="https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,700,900&display=swap" rel="stylesheet">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ asset_v }}">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="{% block body_class %}app-page{% endblock %}">
+{% macro shield() %}
+<img src="{{ url_for('static', filename='aegis-mark.svg') }}" alt="" class="brand-mark" decoding="async">
+{% endmacro %}
+{% macro icon(name, classes='icon icon-sm', stroke='1.9') %}
+<svg class="{{ classes }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="{{ stroke }}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <use href="{{ icons_sprite }}#icon-{{ name }}"></use>
+</svg>
+{% endmacro %}
+
+<header class="main-header">
+    <div class="header-left">
+        {% if is_authenticated %}
+        <button class="mobile-menu-btn" id="menuBtn" aria-label="Menu" aria-controls="sidebar" aria-expanded="false">
+            {{ icon('menu', 'icon icon-md', '2') }}
+        </button>
+        {% endif %}
+        <a href="{{ home_url }}" class="logo-link">
+            <div class="logo-icon">{{ shield() }}</div>
+            <div class="brand-copy">
+                <span class="brand-name">AEGIS</span>
+                <span class="brand-tagline">Le bouclier intelligent de votre maison</span>
+            </div>
+        </a>
+    </div>
+    <div class="header-actions">
+        {% if is_authenticated %}
+        <div class="header-meta" aria-label="Horodatage système">
+            <span class="header-meta-date" id="shellDay">--</span>
+            <span class="header-meta-time" id="shellTime">--</span>
+        </div>
+        <div class="user-badge" id="mqttBadge" title="Lien MQTT">
+            <span class="pulse-dot"></span>
+            <div class="status-chip-copy">
+                <span class="status-chip-label">Réseau</span>
+                <span class="status-chip-value" id="topMqtt">Analyse</span>
+            </div>
+        </div>
+        <a href="{{ url_for('logout') }}" class="logout-btn">
+            {{ icon('logout', 'icon icon-xs', '2') }}
+            Déconnexion
+        </a>
+        {% else %}
+        <a href="{{ url_for('login') }}" class="logout-btn">
+            {{ icon('login', 'icon icon-xs', '2') }}
+            Connexion
+        </a>
+        {% endif %}
+    </div>
+</header>
+
+<div class="main-layout {% if not is_authenticated %}main-layout-public{% endif %}">
+    {% if is_authenticated %}
+    <div class="sidebar-overlay" id="sidebarOverlay" aria-hidden="true"></div>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-top">
+            <p class="sidebar-kicker">Supervision alarme · maison</p>
+            <div class="sidebar-panel">
+                <div class="sidebar-panel-icon">{{ shield() }}</div>
+                <div>
+                    <p class="sidebar-panel-title">AEGIS</p>
+                    <p class="sidebar-panel-text">Console de protection intelligente.</p>
+                </div>
+            </div>
+        </div>
+        <div class="sidebar-content">
+            <nav class="sidebar-nav-section">
+                {% if 'dashboard' in nav_tabs %}
+                <a href="{{ url_for('dashboard') }}" class="sidebar-nav-link {% if active_page=='dashboard' %}active{% endif %}" {% if active_page=='dashboard' %}aria-current="page"{% endif %}>
+                    {{ icon('dashboard', 'icon icon-sm', '2') }}
+                    Tableau de bord
+                </a>
+                {% endif %}
+                {% if 'controle' in nav_tabs %}
+                <a href="{{ url_for('controle') }}" class="sidebar-nav-link {% if active_page=='controle' %}active{% endif %}" {% if active_page=='controle' %}aria-current="page"{% endif %}>
+                    {{ icon('siren', 'icon icon-sm', '2') }}
+                    Activation alarme
+                </a>
+                {% endif %}
+                {% if 'cameras' in nav_tabs %}
+                <a href="{{ url_for('cameras') }}" class="sidebar-nav-link {% if active_page=='cameras' %}active{% endif %}" {% if active_page=='cameras' %}aria-current="page"{% endif %}>
+                    {{ icon('camera', 'icon icon-sm', '2') }}
+                    Caméras
+                </a>
+                {% endif %}
+                {% if 'journal' in nav_tabs %}
+                <a href="{{ url_for('journal') }}" class="sidebar-nav-link {% if active_page=='journal' %}active{% endif %}" {% if active_page=='journal' %}aria-current="page"{% endif %}>
+                    {{ icon('journal', 'icon icon-sm', '2') }}
+                    Journal
+                </a>
+                {% endif %}
+                {% if 'detection' in nav_tabs %}
+                <a href="{{ url_for('detection') }}" class="sidebar-nav-link {% if active_page=='detection' %}active{% endif %}" {% if active_page=='detection' %}aria-current="page"{% endif %}>
+                    {{ icon('detection', 'icon icon-sm', '2') }}
+                    Détection IA
+                </a>
+                {% endif %}
+                <a href="{{ url_for('two_factor_setup') }}" class="sidebar-nav-link {% if active_page=='2fa' %}active{% endif %}" {% if active_page=='2fa' %}aria-current="page"{% endif %}>
+                    {{ icon('login', 'icon icon-sm', '2') }}
+                    Sécurité (2FA)
+                </a>
+                {% if is_admin %}
+                <a href="{{ url_for('admin') }}" class="sidebar-nav-link {% if active_page=='admin' %}active{% endif %}" {% if active_page=='admin' %}aria-current="page"{% endif %}>
+                    {{ icon('admin', 'icon icon-sm', '2') }}
+                    Administration
+                </a>
+                {% endif %}
+            </nav>
+        </div>
+        <div class="sidebar-footer">
+            <div class="system-card">
+                <div class="system-card-head">
+                    <span class="status-label">Plateforme</span>
+                    <span class="status-value">Raspberry Pi 5</span>
+                </div>
+                <p class="system-card-subtitle">Console locale · Bridge Zigbee2MQTT</p>
+                <p class="system-card-subtitle system-card-user">Session · {{ username }}</p>
+            </div>
+        </div>
+    </aside>
+    {% endif %}
+
+    <main class="chat-area {% if not is_authenticated %}chat-area-public{% endif %}">
+        {% block content %}{% endblock %}
+    </main>
+</div>
+
+{% if is_authenticated %}
+<nav class="mobile-tabbar" aria-label="Navigation principale mobile">
+    {% if 'dashboard' in nav_tabs %}
+    <a href="{{ url_for('dashboard') }}" class="mobile-tab {% if active_page=='dashboard' %}active{% endif %}" {% if active_page=='dashboard' %}aria-current="page"{% endif %}>
+        {{ icon('dashboard', 'icon icon-sm', '2') }}
+        <span>Accueil</span>
+    </a>
+    {% endif %}
+    {% if 'controle' in nav_tabs %}
+    <a href="{{ url_for('controle') }}" class="mobile-tab {% if active_page=='controle' %}active{% endif %}" {% if active_page=='controle' %}aria-current="page"{% endif %}>
+        {{ icon('siren', 'icon icon-sm', '2') }}
+        <span>Alarme</span>
+    </a>
+    {% endif %}
+    {% if 'cameras' in nav_tabs %}
+    <a href="{{ url_for('cameras') }}" class="mobile-tab {% if active_page=='cameras' %}active{% endif %}" {% if active_page=='cameras' %}aria-current="page"{% endif %}>
+        {{ icon('camera', 'icon icon-sm', '2') }}
+        <span>Caméras</span>
+    </a>
+    {% endif %}
+    {% if 'journal' in nav_tabs %}
+    <a href="{{ url_for('journal') }}" class="mobile-tab {% if active_page=='journal' %}active{% endif %}" {% if active_page=='journal' %}aria-current="page"{% endif %}>
+        {{ icon('journal', 'icon icon-sm', '2') }}
+        <span>Journal</span>
+    </a>
+    {% endif %}
+    {% if 'detection' in nav_tabs %}
+    <a href="{{ url_for('detection') }}" class="mobile-tab {% if active_page=='detection' %}active{% endif %}" {% if active_page=='detection' %}aria-current="page"{% endif %}>
+        {{ icon('detection', 'icon icon-sm', '2') }}
+        <span>IA</span>
+    </a>
+    {% endif %}
+    {% if is_admin %}
+    <a href="{{ url_for('admin') }}" class="mobile-tab {% if active_page=='admin' %}active{% endif %}" {% if active_page=='admin' %}aria-current="page"{% endif %}>
+        {{ icon('admin', 'icon icon-sm', '2') }}
+        <span>Admin</span>
+    </a>
+    {% endif %}
+</nav>
+{% endif %}
+
+<script>
+    const menuBtn = document.getElementById('menuBtn');
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const mqttBadge = document.getElementById('mqttBadge');
+    const topMqtt = document.getElementById('topMqtt');
+    const shellDay = document.getElementById('shellDay');
+    const shellTime = document.getElementById('shellTime');
+    const sidebarLinks = sidebar?.querySelectorAll('.sidebar-nav-link') || [];
+
+    function closeSidebar({restoreFocus = false} = {}) {
+        sidebar?.classList.remove('visible');
+        overlay?.classList.remove('visible');
+        menuBtn?.setAttribute('aria-expanded', 'false');
+        if (restoreFocus) {
+            menuBtn?.focus();
+        }
+    }
+
+    function openSidebar() {
+        sidebar?.classList.add('visible');
+        overlay?.classList.add('visible');
+        menuBtn?.setAttribute('aria-expanded', 'true');
+    }
+
+    function toggleSidebar() {
+        const visible = sidebar?.classList.contains('visible');
+        if (visible) {
+            closeSidebar();
+            return;
+        }
+        openSidebar();
+    }
+
+    menuBtn?.addEventListener('click', () => {
+        toggleSidebar();
+    });
+
+    overlay?.addEventListener('click', () => {
+        closeSidebar({restoreFocus: true});
+    });
+
+    sidebarLinks.forEach((link) => link.addEventListener('click', () => closeSidebar()));
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && sidebar?.classList.contains('visible')) {
+            closeSidebar({restoreFocus: true});
+        }
+    });
+
+    function updateHeaderClock() {
+        if (!shellDay || !shellTime) {
+            return;
+        }
+
+        const now = new Date();
+        shellDay.textContent = new Intl.DateTimeFormat('fr-FR', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+        }).format(now);
+        shellTime.textContent = new Intl.DateTimeFormat('fr-FR', {
+            hour: '2-digit',
+            minute: '2-digit'
+        }).format(now);
+    }
+
+    function applyShellStatus(summary) {
+        if (!mqttBadge || !topMqtt) {
+            return;
+        }
+
+        const dot = mqttBadge.querySelector('.pulse-dot');
+        if (!summary || typeof summary !== 'object' || !Object.prototype.hasOwnProperty.call(summary, 'mqtt')) {
+            topMqtt.textContent = 'Synchronisation';
+            mqttBadge.classList.remove('is-online', 'is-offline');
+            if (dot) {
+                dot.style.background = 'var(--accent-cyan)';
+            }
+            return;
+        }
+
+        const ok = Boolean(summary.mqtt && summary.bridge);
+        topMqtt.textContent = ok ? 'Réseau stable' : 'Réseau dégradé';
+        mqttBadge.classList.toggle('is-online', ok);
+        mqttBadge.classList.toggle('is-offline', !ok);
+        if (dot) {
+            dot.style.background = ok ? 'var(--green)' : 'var(--red)';
+        }
+    }
+
+    async function refreshShellStatus() {
+        try {
+            const response = await fetch('/api/state', {headers: {'X-Requested-With': 'fetch'}});
+            if (response.status === 401 || response.redirected) {
+                window.location.href = '/login';
+                return;
+            }
+            const data = await response.json();
+            applyShellStatus(data.summary || {});
+        } catch (error) {
+            // Conserver le dernier état connu si le polling échoue.
+        }
+    }
+
+    window.CSRF = document.querySelector('meta[name=csrf-token]').content;
+    window.updateSystemStatus = applyShellStatus;
+    applyShellStatus(null);
+    updateHeaderClock();
+    if (shellDay && shellTime) {
+        window.setInterval(updateHeaderClock, 30000);
+    }
+
+    if (mqttBadge && !document.body.classList.contains('dashboard-page')) {
+        refreshShellStatus();
+        window.setInterval(refreshShellStatus, 10000);
+    }
+</script>
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>

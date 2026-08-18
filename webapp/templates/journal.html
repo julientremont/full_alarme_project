@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}Journal | {{ app_name }}{% endblock %}
+{% block body_class %}app-page journal-page{% endblock %}
+{% block content %}
+<div class="page">
+    <section class="hero hero-single">
+        <div class="panel hero-copy hero-copy-split">
+            <div class="hero-copy-main">
+                <p class="eyebrow">Journal</p>
+                <h1 class="page-title">Journal temps réel</h1>
+                <p class="page-copy">Ouvertures, fermetures, indisponibilités et alertes, dans une lecture dense et opérationnelle.</p>
+            </div>
+            <div class="hero-side-stack">
+                <span class="section-count">{{ events|length }} entrées</span>
+                <span class="hero-rail-note">Historique initial</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="summary-grid">
+        <article class="panel metric-card">
+            <span class="metric-label">Événements</span>
+            <strong class="metric-value" id="eventTotal">--</strong>
+            <p class="metric-note">Historique récent consolidé par la console.</p>
+        </article>
+        <article class="panel metric-card">
+            <span class="metric-label">Ouvertures</span>
+            <strong class="metric-value" id="eventOpen">--</strong>
+            <p class="metric-note">Occurrences d'ouverture dans les dernières entrées.</p>
+        </article>
+        <article class="panel metric-card">
+            <span class="metric-label">Hors ligne</span>
+            <strong class="metric-value" id="eventOffline">--</strong>
+            <p class="metric-note">Pertes de disponibilité consignées récemment.</p>
+        </article>
+        <article class="panel metric-card">
+            <span class="metric-label">Alertes</span>
+            <strong class="metric-value" id="eventAlert">--</strong>
+            <p class="metric-note">Événements critiques prioritaires.</p>
+        </article>
+    </section>
+
+    <section class="panel timeline-panel">
+        <div class="section-head">
+            <div>
+                <p class="eyebrow eyebrow-muted">Activité</p>
+                <h2 class="section-title">Flux des événements</h2>
+                <p class="section-copy">Rafraîchi automatiquement toutes les 4 secondes pour conserver une lecture opérationnelle.</p>
+            </div>
+            <div class="section-count">Live</div>
+        </div>
+        <div class="live-status live-status-inline" id="journalSyncState">
+            <p class="live-status-text" id="journalSyncText" role="status" aria-live="polite">Chargement du journal.</p>
+            <p class="live-status-meta" id="journalSyncMeta">Récupération des dernières entrées.</p>
+        </div>
+        <div id="events" class="events" aria-busy="true"></div>
+    </section>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const initialEvents = {{ events|tojson }};
+const EV = {
+  open: {t: 'Ouverture', c: 'orange'},
+  close: {t: 'Fermeture', c: 'blue'},
+  armed: {t: 'Armé', c: 'green'},
+  disarmed: {t: 'Désarmé', c: 'gray'},
+  online: {t: 'En ligne', c: 'green'},
+  offline: {t: 'Hors ligne', c: 'red'},
+  alert: {t: 'Alerte', c: 'red'}
+};
+const CAT = {sensor: 'Capteur', system: 'Système', alarm: 'Alarme'};
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[char]);
+}
+
+function fmt(ts) {
+  try {
+    return new Date(ts).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'});
+  } catch (error) {
+    return ts;
+  }
+}
+
+function fmtDate(ts) {
+  try {
+    return new Date(ts).toLocaleDateString('fr-FR', {day: '2-digit', month: 'short', year: 'numeric'});
+  } catch (error) {
+    return ts;
+  }
+}
+
+function formatClock(date) {
+  return new Intl.DateTimeFormat('fr-FR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  }).format(date);
+}
+
+function setSyncState(status, meta, tone) {
+  const text = document.getElementById('journalSyncText');
+  const detail = document.getElementById('journalSyncMeta');
+  const wrap = document.getElementById('journalSyncState');
+  if (text) {
+    text.textContent = status;
+  }
+  if (detail) {
+    detail.textContent = meta;
+  }
+  if (wrap) {
+    wrap.dataset.state = tone;
+  }
+}
+
+function renderStats(events) {
+  const counts = {total: events.length, open: 0, offline: 0, alert: 0};
+  for (const event of events) {
+    if (event.event === 'open') {
+      counts.open += 1;
+    }
+    if (event.event === 'offline') {
+      counts.offline += 1;
+    }
+    if (event.event === 'alert') {
+      counts.alert += 1;
+    }
+  }
+
+  document.getElementById('eventTotal').textContent = counts.total;
+  document.getElementById('eventOpen').textContent = counts.open;
+  document.getElementById('eventOffline').textContent = counts.offline;
+  document.getElementById('eventAlert').textContent = counts.alert;
+}
+
+function row(event) {
+  const meta = EV[event.event] || {t: event.event, c: 'gray'};
+  const detail = event.detail ? `<span>${escapeHtml(event.detail)}</span>` : '';
+  return `<article class="ev c-${meta.c}">
+    <span class="ev-dot c-${meta.c}"></span>
+    <div class="ev-body">
+      <div class="ev-top">
+        <div class="ev-heading">
+          <span class="ev-name">${escapeHtml(event.device || event.category)}</span>
+          <span class="ev-category">${escapeHtml(CAT[event.category] || event.category || 'Événement')}</span>
+        </div>
+        <span class="ev-tag c-${meta.c}">${escapeHtml(meta.t)}</span>
+      </div>
+      <div class="ev-meta">
+        <span class="ev-time-strong">${escapeHtml(fmt(event.ts))}</span>
+        <span>${escapeHtml(fmtDate(event.ts))}</span>
+        ${detail}
+      </div>
+    </div>
+  </article>`;
+}
+
+function renderEvents(events) {
+  const element = document.getElementById('events');
+  renderStats(events);
+  element.innerHTML = events.length
+    ? events.map(row).join('')
+    : '<div class="empty-state compact"><span class="empty-badge">Journal calme</span><p class="empty-title">Aucun événement pour le moment</p><p class="empty-copy">Les ouvertures, fermetures et changements d\'état apparaîtront ici dès leur détection.</p></div>';
+}
+
+async function load() {
+  const element = document.getElementById('events');
+  try {
+    element?.setAttribute('aria-busy', 'true');
+    setSyncState('Actualisation en cours', 'Lecture des événements les plus récents.', 'loading');
+    const response = await fetch('/api/events?limit=200');
+    if (response.status === 401 || response.redirected) {
+      window.location.href = '/login';
+      return;
+    }
+    const payload = await response.json();
+    renderEvents(payload);
+    setSyncState('Journal à jour', `Dernière synchronisation à ${formatClock(new Date())}.`, 'ok');
+  } catch (error) {
+    setSyncState('Erreur réseau', 'Le dernier journal affiché est conservé.', 'error');
+  } finally {
+    element?.setAttribute('aria-busy', 'false');
+  }
+}
+
+renderEvents(initialEvents);
+setSyncState('Journal chargé', 'Historique initial prêt.', 'ok');
+load();
+setInterval(load, 4000);
+</script>
+{% endblock %}

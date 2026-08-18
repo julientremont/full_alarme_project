@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 120" width="100" height="120" role="img" aria-label="AEGIS">
+  <defs>
+    <linearGradient id="aegisSilver" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#EEF2F3"></stop>
+      <stop offset=".5" stop-color="#B0B7BF"></stop>
+      <stop offset="1" stop-color="#5A636E"></stop>
+    </linearGradient>
+  </defs>
+  <path d="M50 4 L92 21 V59 C92 89 73 108 50 116 C27 108 8 89 8 59 V21 Z" fill="#11151C" stroke="url(#aegisSilver)" stroke-width="2.5"></path>
+  <path d="M50 33 L69 75 H31 Z" fill="none" stroke="var(--mark, url(#aegisSilver))" stroke-width="3.5" stroke-linejoin="round"></path>
+  <circle cx="50" cy="66" r="6" fill="#0A0D10" stroke="var(--mark, url(#aegisSilver))" stroke-width="3"></circle>
+</svg>

@@ -1,0 +1,204 @@
+"""
+camera.py — Pilotage caméra Tapo (C210) : privacy, sirène, mouvement, YOLO.
+- Désarmé  -> privacy ON  (objectif coupé, ne filme pas).
+- Armé     -> privacy OFF (flux dispo) ; veille mouvement (2 s) puis YOLO.
+- Alarme   -> startManualAlarm (sirène) sur la caméra ; captures + YOLO périodiques.
+Modèle YOLO chargé une fois, inférence sérialisée (Pi).
+"""
+from __future__ import annotations
+
+import logging
+import os
+import re
+import threading
+import time
+from datetime import datetime
+
+import cv2
+import numpy as np
+from pytapo import Tapo
+from ultralytics import YOLO
+
+import storage
+
+# Cap le temps d'ouverture RTSP (évite qu'une caméra injoignable bloque la veille)
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                      "rtsp_transport;tcp|stimeout;5000000")
+
+log = logging.getLogger("aegis.orch.camera")
+
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "yolov8n.pt")
+OBJECTS = {0: "Personne", 43: "Couteau", 76: "Ciseaux", 39: "Batte"}
+
+_model: YOLO | None = None
+_model_lock = threading.Lock()
+
+
+def _get_model() -> YOLO:
+    global _model
+    if _model is None:
+        log.info("Chargement du modèle YOLO…")
+        _model = YOLO(MODEL_PATH)
+        log.info("YOLO prêt")
+    return _model
+
+
+class Camera:
+    def __init__(self, *, key, label, room, host, cloud_user, cloud_password,
+                 rtsp_user, rtsp_password, stream, ctrl_cloud=True):
+        self.key = key
+        self.label = label
+        self.room = room
+        self.host = host
+        self.cloud_user = cloud_user
+        self.cloud_password = cloud_password
+        self.ctrl_cloud = ctrl_cloud          # True = auth cloud (cloudPassword) ; False = compte local
+        self.rtsp_user = rtsp_user
+        self.rtsp_password = rtsp_password
+        self.stream = stream
+        self._ctrl_lock = threading.Lock()   # sérialise les accès pytapo (1 session)
+        self._tapo: Tapo | None = None        # session pytapo réutilisée (limite les handshakes)
+        self._privacy: bool | None = None     # dernier état privacy connu (évite les toggles inutiles)
+        self._suspended_until: float = 0.0    # ne plus solliciter la caméra tant que < now (anti-relance du verrou)
+        # Réglages détection (pilotables depuis l'app via aegis/detection/config).
+        self.classes = set(OBJECTS)           # classes YOLO surveillées
+        self.conf = 0.8                       # seuil de confiance
+        self.motion_seuil = 10000             # seuil de différence d'images (veille)
+
+    def apply_detection_config(self, *, classes=None, conf=None, motion_seuil=None) -> None:
+        if classes is not None:
+            self.classes = {c for c in classes if c in OBJECTS}
+        if conf is not None:
+            self.conf = float(conf)
+        if motion_seuil is not None:
+            self.motion_seuil = int(motion_seuil)
+
+    # ─── contrôle pytapo (privacy + sirène) ──────────────────────────────────
+    def _do(self, fn_name, *args) -> bool:
+        """Réutilise la session pytapo ; ne la recrée qu'en cas d'échec (+1 retry).
+        Le C210 suspend l'auth si trop de handshakes rapprochés."""
+        with self._ctrl_lock:
+            if time.time() < self._suspended_until:
+                return False                   # verrou connu : ne pas relancer le compteur
+            last = None
+            for attempt in range(2):
+                try:
+                    if self._tapo is None:
+                        if self.ctrl_cloud:
+                            self._tapo = Tapo(self.host, self.cloud_user, self.cloud_password,
+                                              cloudPassword=self.cloud_password)
+                        else:
+                            self._tapo = Tapo(self.host, self.cloud_user, self.cloud_password)
+                    getattr(self._tapo, fn_name)(*args)
+                    return True
+                except Exception as e:
+                    last = e
+                    self._tapo = None          # forcer une reconnexion propre
+                    if "Suspension" in str(e):
+                        m = re.search(r"in (\d+) seconds", str(e))
+                        self._suspended_until = time.time() + (int(m.group(1)) if m else 1800)
+                        break                  # ne pas insister (ça relance le verrou)
+                    time.sleep(2)
+            log.error("%s() caméra %s : %s", fn_name, self.label, last)
+            return False
+
+    def set_privacy(self, enabled: bool) -> bool:
+        if self._privacy == enabled:
+            return True                       # déjà dans l'état voulu → aucun handshake
+        ok = self._do("setPrivacyMode", enabled)
+        if ok:
+            self._privacy = enabled
+            log.info("Caméra %s : privacy %s", self.label, "ON (coupée)" if enabled else "OFF (active)")
+        return ok
+
+    def start_siren(self) -> bool:
+        ok = self._do("startManualAlarm")
+        if ok:
+            log.warning("Caméra %s : SIRÈNE ON", self.label)
+        return ok
+
+    def stop_siren(self) -> bool:
+        ok = self._do("stopManualAlarm")
+        if ok:
+            log.info("Caméra %s : sirène OFF", self.label)
+        return ok
+
+    # ─── flux ────────────────────────────────────────────────────────────────
+    # La détection lit depuis go2rtc (seul consommateur du flux caméra) → évite
+    # la contention avec la vue live et allège le Pi. Fallback = RTSP direct.
+    def _rtsp_url(self) -> str:
+        gw = os.getenv("GO2RTC_RTSP", "rtsp://127.0.0.1:8554")
+        if gw:
+            return f"{gw}/{self.key}"
+        return f"rtsp://{self.rtsp_user}:{self.rtsp_password}@{self.host}:554/{self.stream}"
+
+    def _two_frames(self, gap: float):
+        cap = cv2.VideoCapture(self._rtsp_url())
+        if not cap.isOpened():
+            return None, None
+        ok1, f1 = cap.read()
+        if not ok1:
+            cap.release()
+            return None, None
+        time.sleep(gap)
+        ok2, f2 = cap.read()
+        cap.release()
+        return (f1 if ok1 else None), (f2 if ok2 else None)
+
+    def motion(self, gap: float = 2.0, seuil: int | None = None):
+        """Mouvement = différence entre 2 images espacées de `gap` s.
+        Retourne (bool mouvement, dernière frame) ; la frame sert au YOLO."""
+        if seuil is None:
+            seuil = self.motion_seuil
+        f1, f2 = self._two_frames(gap)
+        if f1 is None or f2 is None:
+            return False, None
+        g1 = cv2.cvtColor(cv2.resize(f1, (640, 360)), cv2.COLOR_BGR2GRAY)
+        g2 = cv2.cvtColor(cv2.resize(f2, (640, 360)), cv2.COLOR_BGR2GRAY)
+        diff = int(np.sum(cv2.absdiff(g1, g2)))
+        return diff > seuil, f2
+
+    def grab(self):
+        cap = cv2.VideoCapture(self._rtsp_url())
+        if not cap.isOpened():
+            return None
+        ok, frame = cap.read()
+        cap.release()
+        return frame if ok else None
+
+    def detect(self, frame, *, save: bool = True) -> bool:
+        """YOLO sur une frame. Sauvegarde une capture par objet détecté.
+        Retourne True si une personne/objet surveillé est détecté."""
+        if frame is None:
+            return False
+        frame = cv2.resize(frame, (1280, 720))
+        found = False
+        with _model_lock:
+            results = _get_model()(frame, conf=self.conf, verbose=False)
+        for result in results:
+            if result.boxes is None or result.boxes.cls is None:
+                continue
+            for idx, cls in enumerate(result.boxes.cls):
+                cls_id = int(cls)
+                if cls_id not in self.classes:
+                    continue
+                found = True
+                if save:
+                    conf = float(result.boxes.conf[idx])
+                    box = result.boxes.xyxy[idx].cpu().numpy()
+                    self._save(frame, box, OBJECTS[cls_id], conf)
+        return found
+
+    def snapshot_detect(self, *, save: bool = True) -> bool:
+        return self.detect(self.grab(), save=save)
+
+    def _save(self, frame, box, name, conf):
+        x1, y1, x2, y2 = map(int, box)
+        annotated = frame.copy()
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(annotated, f"{name}: {conf:.2f}", (x1, max(0, y1 - 8)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        ok, buf = cv2.imencode(".jpg", annotated)
+        if ok:
+            ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            storage.save_capture(buf.tobytes(), f"{self.label}_{name}_{ts}.jpg")

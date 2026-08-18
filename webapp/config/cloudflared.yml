@@ -1,0 +1,21 @@
+# Déploiement Cloudflare d'AEGIS — RÉFÉRENCE (déjà appliqué).
+#
+# AEGIS ne crée PAS son propre tunnel : il réutilise le tunnel cloudflared
+# existant du Pi (service systemd, partagé avec n8n/grafana/nutrition/…).
+#   Tunnel ID : 78910193-a5f4-4729-92b7-d65c180c4a24
+#   Config active : /etc/cloudflared/config.yml (service systemd `cloudflared`)
+#
+# Étapes réalisées (2026-06-19) :
+#   1. AEGIS en service systemd sur 127.0.0.1:5002 (voir aegis.service)
+#   2. Ajout dans /etc/cloudflared/config.yml, AVANT le catch-all 404 :
+#        - hostname: aegis.tremontraimi.com
+#          service: http://127.0.0.1:5002
+#   3. DNS (CNAME auto) :
+#        cloudflared tunnel route dns 78910193-a5f4-4729-92b7-d65c180c4a24 aegis.tremontraimi.com
+#   4. sudo systemctl restart cloudflared
+#
+# URL publique : https://aegis.tremontraimi.com
+#
+# Durcissement recommandé : protéger ce hostname avec Cloudflare Access
+# (Zero Trust → Application self-hosted → aegis.tremontraimi.com), pour exiger
+# une auth Cloudflare (email OTP / Google) EN AMONT du login Flask.

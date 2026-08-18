@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Alarme | {{ app_name }}{% endblock %}
+{% block body_class %}app-page alarm-page{% endblock %}
+{% block content %}
+<div class="alarm-screen">
+    <button type="button" class="alarm-toggle is-loading" id="alarmToggle" aria-live="polite">
+        <span class="alarm-ring"></span>
+        <span class="alarm-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5l8-3z"/><path d="M9 12l2 2 4-4"/>
+            </svg>
+        </span>
+        <span class="alarm-state" id="alarmState">…</span>
+        <span class="alarm-action" id="alarmAction">Synchronisation</span>
+    </button>
+    <p class="alarm-flash" id="alarmFlash" role="alert" hidden></p>
+</div>
+
+<section class="panel siren-card" style="max-width:460px;margin:1.5rem auto 0;padding:1.25rem;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+    <strong>Sirène</strong>
+    <span id="sirenEnv" style="opacity:.85;font-size:.95rem;">—</span>
+  </div>
+  <div class="form-group">
+    <label for="sirenVol">Puissance</label>
+    <select id="sirenVol">
+      <option value="2">Bas</option><option value="1">Moyen</option><option value="0">Fort</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label for="sirenRing">Sonnerie</label>
+    <select id="sirenRing"></select>
+  </div>
+  <button type="button" class="login-btn" id="sirenTest">Tester 2 s</button>
+  <p class="alarm-flash" id="sirenFlash" role="alert" hidden></p>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const btn = document.getElementById('alarmToggle');
+const stateEl = document.getElementById('alarmState');
+const actionEl = document.getElementById('alarmAction');
+const flash = document.getElementById('alarmFlash');
+let armed = null;
+
+function render(st) {
+  const s = st && st.state;
+  btn.classList.remove('is-loading', 'is-disarmed', 'is-armed', 'is-alarm');
+  if (s === 'armed') {
+    if (st.mode === 'alarm') {
+      armed = true;
+      btn.classList.add('is-alarm');
+      stateEl.textContent = 'Alarme !';
+      actionEl.textContent = 'Toucher pour désactiver';
+    } else {
+      armed = true;
+      btn.classList.add('is-armed');
+      stateEl.textContent = 'Activée';
+      actionEl.textContent = 'Toucher pour désactiver';
+    }
+  } else if (s === 'disarmed') {
+    armed = false;
+    btn.classList.add('is-disarmed');
+    stateEl.textContent = 'Désactivée';
+    actionEl.textContent = 'Toucher pour activer';
+  } else {
+    armed = null;
+    btn.classList.add('is-loading');
+    stateEl.textContent = 'Indisponible';
+    actionEl.textContent = 'Orchestrateur injoignable';
+  }
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('/api/alarm', {headers: {'X-Requested-With': 'fetch'}});
+    if (r.status === 401 || r.redirected) { location.href = '/login'; return; }
+    render(await r.json());
+  } catch (e) { /* garder l'état */ }
+}
+
+btn.addEventListener('click', async () => {
+  if (armed === null) return;
+  const action = armed ? 'disarm' : 'arm';
+  btn.disabled = true;
+  flash.hidden = true;
+  try {
+    const r = await fetch('/api/alarm/set', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': window.CSRF},
+      body: JSON.stringify({action})
+    });
+    if (!r.ok) throw new Error();
+    setTimeout(refresh, 1000);
+  } catch (e) {
+    flash.textContent = 'Action impossible, réessayez.';
+    flash.hidden = false;
+  } finally {
+    setTimeout(() => { btn.disabled = false; }, 1000);
+  }
+});
+
+refresh();
+setInterval(refresh, 3000);
+
+// ─── Sirène (température/humidité + réglages) ───────────────────────────────
+const sVol = document.getElementById('sirenVol');
+const sRing = document.getElementById('sirenRing');
+const sEnv = document.getElementById('sirenEnv');
+const sTest = document.getElementById('sirenTest');
+const sFlash = document.getElementById('sirenFlash');
+for (let i = 1; i <= 12; i++) {
+  const o = document.createElement('option');
+  o.value = i; o.textContent = 'Mélodie ' + i; sRing.appendChild(o);
+}
+function sirenFlash(msg) { sFlash.textContent = msg; sFlash.hidden = false; setTimeout(() => sFlash.hidden = true, 2500); }
+async function sirenRefresh() {
+  try {
+    const r = await fetch('/api/siren', {headers: {'X-Requested-With': 'fetch'}});
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.reachable) {
+      const parts = [];
+      if (d.temperature != null) parts.push(d.temperature + ' °C');
+      if (d.humidity != null) parts.push(d.humidity + ' %');
+      if (d.battery != null) parts.push('🔋 ' + d.battery + ' %');
+      sEnv.textContent = parts.join(' · ') || 'prête';
+    } else { sEnv.textContent = 'injoignable'; }
+    if (d.volume != null && document.activeElement !== sVol) sVol.value = String(parseInt(d.volume));
+    if (d.ringtone != null && document.activeElement !== sRing) sRing.value = String(parseInt(d.ringtone));
+  } catch (e) { /* garder */ }
+}
+async function sirenSet(body) {
+  try {
+    const r = await fetch('/api/siren', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': window.CSRF},
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error();
+  } catch (e) { sirenFlash('Réglage impossible, réessayez.'); }
+}
+sVol.addEventListener('change', () => sirenSet({volume: parseInt(sVol.value)}));
+sRing.addEventListener('change', () => sirenSet({ringtone: parseInt(sRing.value)}));
+sTest.addEventListener('click', () => { sirenSet({test: true}); sirenFlash('Test en cours…'); });
+sirenRefresh();
+setInterval(sirenRefresh, 5000);
+</script>
+{% endblock %}

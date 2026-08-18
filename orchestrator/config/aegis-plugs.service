@@ -1,0 +1,24 @@
+[Unit]
+Description=AEGIS — service prises Tapo (télémétrie + contrôle)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=j.tremont
+Group=j.tremont
+WorkingDirectory=/home/j.tremont/Documents/Projets/full_alarme_project/orchestrator
+Environment="PATH=/home/j.tremont/Documents/Projets/full_alarme_project/orchestrator/.venv/bin:/usr/bin:/bin"
+ExecStart=/home/j.tremont/Documents/Projets/full_alarme_project/orchestrator/.venv/bin/python plugs.py
+
+NoNewPrivileges=true
+PrivateTmp=true
+Restart=on-failure
+RestartSec=10
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aegis-plugs
+
+[Install]
+WantedBy=multi-user.target

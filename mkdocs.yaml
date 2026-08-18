@@ -1,4 +1,4 @@
-site_name: boilerplate-datascience-artefact
+site_name: AEGIS - Documentation projet
 
 theme:
   name: "material"
@@ -40,7 +40,7 @@ plugins:
   - termynal
 
 extra_css:
-  - stylesheets/skaff.css
+  - style.css
 
 markdown_extensions:
   - admonition
@@ -58,5 +58,15 @@ markdown_extensions:
   - pymdownx.inlinehilite
 
 nav:
-  - Home: index.md
-  - Source code: code.md
+  - Accueil: index.md
+  - Zigbee:
+      - Installation: 01-zigbee-setup.md
+      - Capteurs Aqara: 02-capteurs-aqara.md
+  - Application web:
+      - Design + strategie: 07-design-interface.md
+      - Stack technique: 08-stack-technique.md
+      - Guide integration UI: 09-guide-integration-ui.md
+  - Alarme:
+      - Alarme, camera & orchestrateur: 04-alarme-camera.md
+      - Architecture MQTT: 05-architecture-mqtt.md
+      - Messagerie (notifier): 14-messagerie.md

@@ -1,0 +1,191 @@
+/* ============================================================
+   AEGIS — feuille de style de base (vanilla, sans build)
+   Placer dans src/web/static/css/aegis.css
+   Charger Satoshi :
+   <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+   <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&display=swap" rel="stylesheet">
+   ============================================================ */
+
+:root {
+  --bg:        #06080B;
+  --bg-app:    #0A0D10;
+  --surface:   #0F141A;
+  --surface-2: #0B0F14;
+  --border:    #1A2029;
+  --border-2:  #232B35;
+  --text-hi:   #E5EBEC;
+  --text-mid:  #8A94A0;
+  --text-low:  #6B7480;
+  --cyan:      #00B2FF;
+  --green:     #22D07A;
+  --red:       #F0454B;
+  --r-sm: 10px;  --r-md: 14px;  --r-lg: 18px;  --r-xl: 20px;
+  --sp: 8px;
+  --sidebar-w: 240px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg-app);
+  color: var(--text-hi);
+  font-family: 'Satoshi', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+
+a { color: var(--cyan); text-decoration: none; }
+a:hover { color: #4FC8FF; }
+
+/* ---------- Typographie ---------- */
+.h-page   { font-size: 20px; font-weight: 700; color: var(--text-hi); }
+.h-brand  { font-size: 17px; font-weight: 900; letter-spacing: .22em; }
+.label    { font-size: 12px; font-weight: 700; letter-spacing: .06em; color: var(--text-low); }
+.muted    { color: var(--text-mid); }
+.dim      { color: var(--text-low); }
+
+/* ---------- Layout : app shell ---------- */
+.app { display: flex; min-height: 100vh; }
+
+.sidebar {
+  width: var(--sidebar-w); flex: none;
+  background: #0C1016; border-right: 1px solid #171E26;
+  display: flex; flex-direction: column; padding: 26px 18px;
+}
+.sidebar .brand { display: flex; align-items: center; gap: 12px; padding: 0 8px 26px; }
+.sidebar .brand svg { width: 26px; height: 31px; }
+
+.nav { display: flex; flex-direction: column; gap: 4px; }
+.nav-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px; border-radius: var(--r-sm);
+  font-size: 14px; font-weight: 500; color: var(--text-mid);
+  border: 1px solid transparent; cursor: pointer;
+}
+.nav-item .dot { width: 7px; height: 7px; border-radius: 2px; background: #3B4450; }
+.nav-item:hover { color: var(--text-hi); }
+.nav-item.active {
+  background: rgba(0,178,255,.10); border-color: rgba(0,178,255,.25);
+  color: var(--text-hi); font-weight: 600;
+}
+.nav-item.active .dot { background: var(--cyan); }
+
+.sys-badge {
+  margin-top: auto; padding: 14px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid #171E26;
+  display: flex; align-items: center; gap: 11px;
+}
+.sys-badge .led { width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px rgba(34,208,122,.7); }
+
+.main { flex: 1; display: flex; flex-direction: column; }
+.topbar {
+  height: 74px; flex: none; padding: 0 34px;
+  border-bottom: 1px solid #171E26;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.content { flex: 1; padding: 34px; }
+
+/* ---------- Cartes ---------- */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 24px;
+}
+.card--nested { background: var(--surface-2); border-radius: var(--r-md); }
+
+/* ---------- Boutons ---------- */
+.btn { all: unset; cursor: pointer; text-align: center; font-weight: 700;
+  font-size: 14px; padding: 15px 28px; border-radius: 12px; display: inline-block; }
+.btn--primary { background: var(--text-hi); color: var(--bg-app); box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+.btn--secondary { background: #11161D; border: 1px solid var(--border-2); color: var(--text-mid); font-weight: 600; }
+.btn--accent { background: var(--cyan); color: #04121C; }
+.btn--danger { background: var(--red); color: #fff; }
+
+/* ---------- Badges / puces ---------- */
+.badge { display: inline-flex; align-items: center; gap: 7px; font-size: 12px;
+  font-weight: 700; padding: 6px 12px; border-radius: 20px; letter-spacing: .04em; }
+.badge--ok    { background: rgba(34,208,122,.10); color: var(--green); }
+.badge--alert { background: rgba(240,69,75,.12);  color: var(--red); }
+.badge--info  { background: rgba(0,178,255,.10);  color: #4FC8FF; }
+.badge--muted { border: 1px solid var(--border-2); color: var(--text-low); }
+.badge .led { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+.chip { font-size: 13px; font-weight: 500; color: var(--text-mid);
+  padding: 8px 14px; border-radius: 20px; border: 1px solid var(--border-2); cursor: pointer; }
+.chip.active { color: var(--text-hi); background: rgba(0,178,255,.12); border-color: rgba(0,178,255,.25); font-weight: 600; }
+
+/* ---------- Interrupteur (toggle) ---------- */
+.switch { width: 44px; height: 26px; border-radius: 14px; background: #20262E;
+  position: relative; cursor: pointer; transition: background .15s; flex: none; }
+.switch .knob { position: absolute; left: 3px; top: 3px; width: 20px; height: 20px;
+  border-radius: 50%; background: #3B4450; transition: left .15s, background .15s; }
+.switch.on { background: var(--cyan); }
+.switch.on .knob { left: 21px; background: #04121C; }
+
+/* ---------- Slider ---------- */
+.slider { height: 8px; border-radius: 5px; background: #141A21; position: relative; }
+.slider .fill { position: absolute; left: 0; top: 0; height: 100%; border-radius: 5px;
+  background: linear-gradient(90deg, var(--cyan), #4FC8FF); }
+.slider .knob { position: absolute; top: -7px; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--text-hi); box-shadow: 0 2px 8px rgba(0,0,0,.5); transform: translateX(-50%); }
+
+/* ---------- Champs ---------- */
+.field { width: 100%; padding: 14px 16px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--border-2);
+  color: var(--text-hi); font-size: 14px; font-family: inherit; }
+.field::placeholder { color: var(--text-low); }
+.field:focus { outline: none; border-color: var(--cyan); }
+
+/* ---------- Timeline (journal) ---------- */
+.event-row { display: flex; gap: 16px; padding: 16px 0; border-bottom: 1px solid #141A21; align-items: center; }
+.event-row:last-child { border-bottom: 0; }
+.event-time { font-family: ui-monospace, monospace; font-size: 13px; color: var(--text-mid); width: 52px; flex: none; }
+.event-icon { width: 44px; height: 44px; flex: none; border-radius: var(--r-sm);
+  display: flex; align-items: center; justify-content: center; font-size: 17px; }
+.event-title { font-size: 15px; font-weight: 600; color: var(--text-hi); }
+.event-sub { font-size: 12.5px; color: var(--text-low); margin-top: 2px; }
+
+/* ---------- Bouclier héro + anneau ---------- */
+.shield-hero { position: relative; display: flex; align-items: center; justify-content: center; }
+.shield-hero .ring { position: absolute; inset: 0; border: 1.5px solid rgba(34,208,122,.4);
+  border-radius: 50%; animation: aegis-ring 3s ease-out infinite; }
+@keyframes aegis-ring { 0% { transform: scale(.7); opacity: .7; } 100% { transform: scale(1.6); opacity: 0; } }
+@keyframes aegis-pulse { 0%,100% { opacity: .6; transform: scale(1); } 50% { opacity: 1; transform: scale(1.05); } }
+.shield-hero svg { animation: aegis-pulse 4s ease-in-out infinite; }
+/* état protégé : appliquer --mark:#22D07A sur le <svg> pour teinter le A + l'œil */
+.protected svg { --mark: var(--green); }
+
+/* ---------- Flux caméra ---------- */
+.stream { border-radius: var(--r-lg); overflow: hidden; position: relative;
+  background: repeating-linear-gradient(115deg, #0E1319 0 22px, #10161d 22px 44px);
+  border: 1px solid var(--border); }
+.detection-box { position: absolute; border: 2px solid var(--green); border-radius: 4px;
+  box-shadow: 0 0 0 3px rgba(34,208,122,.15); }
+.detection-box .tag { position: absolute; top: -26px; left: -2px; background: var(--green);
+  color: #06080B; font-size: 12px; font-weight: 800; padding: 3px 8px; border-radius: 5px 5px 0 0; }
+.rec { color: var(--red); }
+.rec .led { animation: aegis-pulse 2s infinite; }
+
+/* ============================================================
+   MOBILE : tab bar en bas + colonne unique
+   ============================================================ */
+.tabbar {
+  height: 64px; flex: none; border-top: 1px solid #171E26;
+  display: flex; align-items: center; justify-content: space-around;
+  padding-bottom: 8px;
+  position: sticky; bottom: 0; background: var(--bg-app);
+}
+.tab { display: flex; flex-direction: column; align-items: center; gap: 4px;
+  font-size: 10px; color: var(--text-low); min-width: 44px; min-height: 44px;
+  justify-content: center; cursor: pointer; }
+.tab .dot { width: 6px; height: 6px; border-radius: 2px; background: #3B4450; }
+.tab.active { color: var(--cyan); font-weight: 600; }
+.tab.active .dot { background: var(--cyan); }
+
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .content { padding: 20px 22px; }
+  .topbar { padding: 0 22px; }
+}
+@media (min-width: 769px) {
+  .tabbar { display: none; }
+}

@@ -1,0 +1,48 @@
+# Registre matériel AEGIS — déclaratif.
+# source: zigbee | camera | doorbell | siren | bridge
+# Pour les devices zigbee, `key` = friendly_name dans Zigbee2MQTT.
+# Statut équipements: vert=on / rouge=off. Capteurs: bleu=fermé / orange=ouvert / rouge=offline.
+
+groups:
+  - id: infrastructure
+    label: Infrastructure Zigbee
+    devices:
+      - { key: coordinateur, label: "Antenne / Coordinateur", source: bridge, room: "Placard central", icon: antenna }
+      - { key: routeur_chambres, label: "Routeur chambres", source: zigbee, kind: router, room: "Placard (côté chambres)", icon: router }
+      - { key: routeur_salon, label: "Routeur salon", source: zigbee, kind: router, room: "Placard (côté salon)", icon: router }
+
+  - id: securite
+    label: Sécurité
+    devices:
+      - { key: badgeuse, label: "Badgeuse entrée", source: doorbell, room: "Entrée", icon: bell }
+      - { key: sirene, label: "Sirène", source: siren, room: "Maison", icon: siren }
+
+  - id: prises
+    label: Prises Tapo
+    devices:
+      - { key: prise_cuisine, label: "Prise cuisine", source: plug, host: 192.168.1.2, room: "Cuisine", icon: plug }
+      - { key: prise_entree, label: "Prise entrée", source: plug, host: 192.168.1.128, room: "Entrée", icon: plug }
+      - { key: prise_couloir, label: "Prise couloir", source: plug, host: 192.168.1.126, room: "Couloir", icon: plug }
+      - { key: prise_salon, label: "Prise salon", source: plug, host: 192.168.1.30, room: "Salon", icon: plug }
+
+  - id: cameras
+    label: Caméras
+    devices:
+      # power_plug = prise Tapo qui alimente la caméra. Désarmé = prise coupée =
+      # caméra hors tension (vraie confidentialité). Armé = prise allumée.
+      - { key: cam_entree, label: "Entrée", source: camera, room: "Entrée", icon: camera, real: true, host: 192.168.1.66, onboard_siren: false, power_plug: prise_entree }
+      - { key: cam_salon, label: "Salon", source: camera, room: "Salon", icon: camera, real: true, host: 192.168.1.123, power_plug: prise_salon }
+      - { key: cam_cuisine, label: "Cuisine", source: camera, room: "Cuisine", icon: camera, real: true, host: 192.168.1.77, power_plug: prise_cuisine }
+      - { key: cam_couloir, label: "Couloir", source: camera, room: "Couloir", icon: camera, real: true, host: 192.168.1.85, power_plug: prise_couloir }
+
+  - id: capteurs
+    label: Capteurs d'ouverture
+    devices:
+      - { key: porte_entree, label: "Porte d'entrée", source: zigbee, kind: contact, room: "Entrée", icon: door }
+      - { key: fenetre_chambre_parents, label: "Chambre parents", source: zigbee, kind: contact, room: "Chambre parents", icon: window }
+      - { key: fenetre_chambre_noah, label: "Chambre Noah", source: zigbee, kind: contact, room: "Chambre Noah", icon: window }
+      - { key: fenetre_chambre_mia, label: "Chambre Mia", source: zigbee, kind: contact, room: "Chambre Mia", icon: window }
+      - { key: fenetre_cuisine, label: "Cuisine", source: zigbee, kind: contact, room: "Cuisine", icon: window }
+      - { key: porte_fenetre_salon_gauche, label: "Salon gauche", source: zigbee, kind: contact, room: "Salon", icon: window }
+      - { key: porte_fenetre_salon_milieu, label: "Salon milieu", source: zigbee, kind: contact, room: "Salon", icon: window }
+      - { key: porte_fenetre_salon_droite, label: "Salon droite", source: zigbee, kind: contact, room: "Salon", icon: window }

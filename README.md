@@ -1,228 +1,77 @@
-# Data Science Boilerplate
+# Full Alarme Project
 
-Welcome to the **Data Science Boilerplate**: A modern, production-ready template for data science projects with best practices.
+Projet d'alarme maison DIY base sur Zigbee, MQTT et une interface web Flask nommee **AEGIS**.
 
-This documentation contains the following sections:
+Le depot contient deux axes principaux :
 
-- [Quick Start](#quick-start)
-- [Project Structure](#project-structure)
-- [Package Customization](#package-customization)
-- [Development Workflow](#development-workflow)
-- [Documentation](#documentation)
+- `docs/` : la documentation technique du projet, publiee avec MkDocs Material.
+- `webapp/` : l'application web AEGIS pour superviser les equipements, les capteurs et le journal.
 
-# Quick Start
+## Demarrage rapide
 
-## 1. Create a new repository
+### Outils du depot racine
 
-### Option A: Use as GitHub Template
-1. Click "Use this template" on GitHub
-2. Choose "Create a new repository"
-3. Name your repository
-
-### Option B: Clone and Customize
-```bash
-git clone <this-repo-url>
-cd <your-project-name>
-```
-
-## 2. Customize Package Name (Optional)
-
-You can easily customize the package name to match your project:
+Le workflow racine utilise `uv`.
 
 ```bash
-# Customize during setup
-make setup PACKAGE_NAME=my-awesome-project
-
-# Or customize separately
-make customize-package PACKAGE_NAME=my-awesome-project
-```
-
-The package name will automatically be converted to a valid Python module name (hyphens become underscores).
-
-## 3. Setup Development Environment
-
-```bash
-# Install dependencies and setup virtual environment
 make setup
-
-# Install pre-commit hooks
 make install_precommit
-```
-
-That's it! Your development environment is ready.
-
-# Project Structure
-
-This boilerplate provides a recommended repository structure following Python best practices:
-
-```
-├── src/                           # Source code (src layout)
-│   └── your_package_name/         # Your main package
-│       ├── __init__.py
-│       ├── core/                  # Core functionality
-│       │   ├── __init__.py
-│       │   ├── data_processing.py
-│       │   └── models.py
-│       └── utils/                 # Utility functions
-│           ├── __init__.py
-│           └── helpers.py
-├── tests/                         # Test files
-│   ├── unit_tests/
-│   ├── integration_tests/
-│   └── data/
-├── notebooks/                     # Jupyter notebooks
-├── docs/                          # Documentation
-├── config/                        # Configuration files
-├── bin/                           # Executable scripts
-├── data/                          # Data files (gitignored)
-├── secrets/                       # Sensitive files (gitignored)
-├── pyproject.toml                 # Project configuration
-├── requirements.txt               # Runtime dependencies
-├── Makefile                       # Development commands
-└── .pre-commit-config.yaml        # Pre-commit hooks
-```
-
-## Key Benefits of This Structure
-
-- **Src Layout**: Prevents import confusion and follows Python best practices
-- **Clear Separation**: Source code, tests, notebooks, and configuration are clearly separated
-- **Scalable**: Easy to add new modules and packages
-- **Standard**: Follows industry conventions
-
-# Package Customization
-
-The boilerplate makes it easy to customize the package name for your project:
-
-## How It Works
-
-- **Package Name**: The name you specify (e.g., "my-awesome-project")
-- **Python Module**: Automatically converted (e.g., "my_awesome_project")
-
-## Customization Commands
-
-```bash
-# Show current configuration
-make customize-package
-
-# Customize package name
-make customize-package PACKAGE_NAME=my-ds-project
-
-# Customize during setup
-make setup PACKAGE_NAME=my-ds-project
-```
-
-## What Gets Updated
-
-- `pyproject.toml`: Package name and module configuration
-- `src/` directory: Renamed to match your module name
-- All imports will work with the new module name
-
-## Examples
-
-| Package Name | Python Module | Import Statement |
-|--------------|---------------|------------------|
-| `my-project` | `my_project` | `from my_project import ...` |
-| `awesome-ds` | `awesome_ds` | `from awesome_ds import ...` |
-| `ml-pipeline` | `ml_pipeline` | `from ml_pipeline import ...` |
-
-# Development Workflow
-
-## Available Commands
-
-```bash
-# Setup development environment
-make setup
-
-# Install pre-commit hooks
-make install_precommit
-
-# Format and lint code
-make format
-
-# Run tests
 make run_tests
-
-# Serve documentation locally
-make serve_docs_locally
-
-# Deploy documentation
-make deploy_docs
-```
-
-## Code Quality Tools
-
-This boilerplate includes several tools to maintain code quality:
-
-- **Pre-commit hooks**: Automatically format and lint code on commit
-- **Ruff**: Fast Python linter and formatter
-- **Bandit**: Security vulnerability detection
-- **Pytest**: Testing framework
-- **nbstripout**: Clean Jupyter notebook outputs
-
-## Git Workflow
-
-1. **Pre-commit hooks** automatically format and lint your code
-2. **Tests run on push** to ensure code quality
-3. **CI pipeline** validates code on GitHub
-4. **Pull request template** helps with code reviews
-
-# Documentation
-
-## Local Development
-
-```bash
-# Serve documentation locally
+make build_docs
 make serve_docs_locally
 ```
 
-This will serve the documentation at `http://localhost:8001`
+Commandes equivalentes sans `make` :
 
-## Publishing
-
-The documentation is automatically built and deployed to GitHub Pages on each push to the `main` branch.
-
-To manually deploy:
 ```bash
-make deploy_docs
+uv sync --extra dev
+uv run pytest tests/
+uv run --extra dev mkdocs build
+uv run --extra dev mkdocs serve --livereload -a localhost:8001
 ```
 
-## Configuration
+La documentation locale est servie sur `http://localhost:8001`.
 
-- **MkDocs**: Documentation generator
-- **Material for MkDocs**: Beautiful theme
-- **GitHub Pages**: Automatic deployment
+Pour publier sur `gh-pages`, utiliser `make deploy_docs` avec un remote Git configure et des identifiants valides.
 
-# Adding Dependencies
+### Webapp AEGIS
 
-## Runtime Dependencies
-
-Add to `requirements.txt`:
-```
-pandas>=2.0.0
-numpy>=1.24.0
-scikit-learn>=1.3.0
+```bash
+cd webapp
+uv sync
+cp .env.example .env
+uv run python create_user.py julien --admin
+uv run flask --app app run --host 127.0.0.1 --port 5002
 ```
 
-## Development Dependencies
+L'application est ensuite accessible sur `http://127.0.0.1:5002`.
 
-Add to `pyproject.toml` under `[project.optional-dependencies]`:
-```toml
-dev = [
-    "pre-commit>=3.0.0",
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-]
+## Structure utile
+
+```text
+docs/                 Documentation MkDocs du projet
+webapp/               Interface web AEGIS (Flask, Jinja2, SQLite, MQTT)
+src/                  Code Python du depot racine
+tests/                Tests Python du depot racine
+config/               Configurations complementaires
+notebooks/            Explorations et notes techniques
+mkdocs.yaml           Configuration MkDocs
+Makefile              Commandes de travail via uv
 ```
 
-# Contributing
+## Documentation disponible
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests: `make run_tests`
-5. Format code: `make format`
-6. Submit a pull request
+- `docs/01-zigbee-setup.md` : installation de l'infrastructure Zigbee.
+- `docs/02-capteurs-aqara.md` : mise en service des capteurs d'ouverture.
+- `docs/07-design-interface.md` : vision produit et strategie UI d'AEGIS.
+- `docs/08-stack-technique.md` : pile technique retenue.
+- `docs/09-guide-integration-ui.md` : conventions d'integration frontend pour `webapp/`.
 
-# License
+## AEGIS en bref
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+- Stack : Flask, Jinja2, SQLite, `paho-mqtt`, CSS pur.
+- Etat live : polling HTTP sur `/api/state`, alimente par un thread MQTT.
+- Pages MVP : tableau de bord, cameras, journal, administration.
+- Deploiement cible : `systemd` + Cloudflare Tunnel.
+
+Voir aussi `webapp/README.md` pour les details d'installation et d'exploitation de l'application.

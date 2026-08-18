@@ -1,0 +1,13 @@
+# Passerelle vidéo AEGIS — RTSP -> navigateur (MP4/WebRTC).
+# Creds RTSP injectés par variables d'env (CAM_USER/CAM_PASS), pas en dur.
+api:
+  listen: "127.0.0.1:1984"
+
+log:
+  level: warn
+
+streams:
+  cam_salon:   rtsp://${CAM_USER}:${CAM_PASS}@192.168.1.123:554/stream1
+  cam_entree:  rtsp://${CAM_USER}:${CAM_PASS}@192.168.1.66:554/stream1
+  cam_cuisine: rtsp://${CAM_USER}:${CAM_PASS}@192.168.1.77:554/stream1
+  cam_couloir: rtsp://${CAM_USER}:${CAM_PASS}@192.168.1.85:554/stream1

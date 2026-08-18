@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="shield-stroke" x1="24" y1="16" x2="104" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f5f7fb"/>
+      <stop offset="0.4" stop-color="#adb6c2"/>
+      <stop offset="0.72" stop-color="#f8fbff"/>
+      <stop offset="1" stop-color="#78818d"/>
+    </linearGradient>
+    <linearGradient id="shield-fill" x1="64" y1="12" x2="64" y2="116" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#16202b"/>
+      <stop offset="0.52" stop-color="#0a1118"/>
+      <stop offset="1" stop-color="#05080c"/>
+    </linearGradient>
+    <linearGradient id="core-fill" x1="64" y1="28" x2="64" y2="98" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fafcff"/>
+      <stop offset="0.58" stop-color="#a7b0bc"/>
+      <stop offset="1" stop-color="#f7f9fc"/>
+    </linearGradient>
+    <linearGradient id="eye-fill" x1="64" y1="70" x2="64" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f5f7fb"/>
+      <stop offset="1" stop-color="#8d96a3"/>
+    </linearGradient>
+    <filter id="cyan-glow" x="0" y="0" width="128" height="128" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#00c2ff" flood-opacity="0.24"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#cyan-glow)">
+    <path d="M64 10 101 24v31.7c0 25.6-15.6 44.7-37 56.6-21.4-11.9-37-31-37-56.6V24L64 10Z" fill="url(#shield-fill)"/>
+    <path d="M64 10 101 24v31.7c0 25.6-15.6 44.7-37 56.6-21.4-11.9-37-31-37-56.6V24L64 10Z" stroke="url(#shield-stroke)" stroke-width="5.2" stroke-linejoin="round"/>
+    <path d="M64 22.5 83.6 44H72.2L64 34.4 55.8 44H44.4L64 22.5Z" fill="url(#core-fill)"/>
+    <path d="M64 22.5 91 95.2H79.2l-5.6-15.2H54.4l-5.6 15.2H37L64 22.5Zm5.6 47.6L64 54.2l-5.6 15.9h11.2Z" fill="url(#core-fill)"/>
+    <path d="M34.5 95.2H49l5.8 13.8L64 118l9.2-9 5.8-13.8h14.5L64 123 34.5 95.2Z" fill="url(#shield-fill)" opacity="0.92"/>
+    <path d="M84.5 81.5c-5.2-7.2-12-10.8-20.5-10.8s-15.3 3.6-20.5 10.8c5.5 5.5 12.3 8.3 20.5 8.3s15-2.8 20.5-8.3Z" fill="url(#eye-fill)"/>
+    <path d="M78.4 81.5c-4-3.7-8.8-5.6-14.4-5.6s-10.4 1.9-14.4 5.6c3.8 3.4 8.6 5.1 14.4 5.1s10.6-1.7 14.4-5.1Z" fill="#091018"/>
+    <circle cx="64" cy="81.5" r="4.6" fill="#00c2ff" fill-opacity="0.7"/>
+    <circle cx="64" cy="81.5" r="2.2" fill="#f5f7fb"/>
+    <path d="M64 16.5 95.5 28v27.2c0 22.1-12.7 38.6-31.5 49.6C45.2 93.8 32.5 77.3 32.5 55.2V28L64 16.5Z" stroke="#f8fbff" stroke-opacity="0.2" stroke-width="1.8"/>
+  </g>
+</svg>

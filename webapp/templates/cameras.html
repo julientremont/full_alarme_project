@@ -1,0 +1,407 @@
+{% extends "base.html" %}
+{% block title %}Caméras | {{ app_name }}{% endblock %}
+{% block body_class %}app-page cameras-page{% endblock %}
+{% block content %}
+<div class="page">
+    <section class="hero hero-single">
+        <div class="panel hero-copy hero-copy-split">
+            <div class="hero-copy-main">
+                <p class="eyebrow">Caméras</p>
+                <h1 class="page-title">Couverture vidéo</h1>
+                <p class="page-copy">Visionneuses sécurisées et préparation des points d'observation de la maison.</p>
+            </div>
+            <div class="hero-side-stack">
+                <span class="section-count">{{ cameras|length }} points</span>
+                <span class="hero-rail-note">Couverture prévue</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="camera-layout">
+        <div class="panel cam-stage-card">
+            <div class="cam-stage-head">
+                <div>
+                    <p class="eyebrow eyebrow-muted">Flux sélectionné</p>
+                    <h2 class="section-title" id="camTitle">—</h2>
+                    <p class="section-copy" id="camRoom">Sélectionnez une zone pour préparer l'affichage sécurisé.</p>
+                </div>
+                <span class="section-count" id="camStageMetaBadge">Passerelle vidéo à brancher</span>
+            </div>
+
+            <div class="live-status live-status-inline" id="cameraSyncState">
+                <p class="live-status-text" id="cameraSyncText" role="status" aria-live="polite">Synchronisation vidéo en attente.</p>
+                <p class="live-status-meta" id="cameraSyncMeta">Lecture de l'état des points caméra.</p>
+            </div>
+
+            <div class="cam-view" id="camView">
+                <div class="cam-placeholder">
+                    <span class="empty-badge">Mode attente</span>
+                    <div class="cam-placeholder-icon">
+                        <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="{{ icons_sprite }}#icon-camera"></use></svg>
+                    </div>
+                    <p>Flux vidéo non disponible</p>
+                    <p class="muted">Le lecteur sécurisé apparaîtra ici dès que la passerelle de diffusion sera raccordée.</p>
+                    <span class="cam-stage-pill" id="camStageStatus">Analyse</span>
+                </div>
+            </div>
+
+            <div class="cam-meta-grid">
+                <div class="info-tile">
+                    <span class="info-label">Transport</span>
+                    <strong class="info-value" id="camTransport">RTSP -> HLS/WebRTC</strong>
+                </div>
+                <div class="info-tile">
+                    <span class="info-label">Sélection</span>
+                    <strong class="info-value" id="camKey">—</strong>
+                </div>
+                <div class="info-tile">
+                    <span class="info-label">Intégration</span>
+                    <strong class="info-value" id="camIntegration">Passerelle vidéo à brancher</strong>
+                </div>
+            </div>
+        </div>
+
+        <aside class="panel cam-list-card">
+            <div class="section-head section-head-tight">
+                <div>
+                    <p class="eyebrow eyebrow-muted">Caméras</p>
+                    <h2 class="section-title">Points de vue</h2>
+                    <p class="section-copy">Accès rapide aux zones déjà prévues dans le registre matériel.</p>
+                </div>
+                <div class="section-count">{{ cameras|length }} vues</div>
+            </div>
+
+            <div class="cam-switch">
+                {% for c in cameras %}
+                <button class="cam-btn {% if loop.first %}active{% endif %}"
+                        data-key="{{ c.key }}"
+                        data-label="{{ c.label }}"
+                        data-room="{{ c.room }}"
+                        data-viewer-url="{{ c.viewer_url or '' }}"
+                        data-viewer-mode="{{ c.viewer_mode or 'iframe' }}"
+                        data-snapshot-url="{{ c.snapshot_url or '' }}"
+                        data-transport="{{ c.transport or 'RTSP -> HLS/WebRTC' }}"
+                        data-note="{{ c.note or '' }}"
+                        data-configured="{{ 'true' if c.configured else 'false' }}"
+                        data-real="{{ 'true' if c.real else 'false' }}"
+                        aria-pressed="{{ 'true' if loop.first else 'false' }}">
+                    <span class="cam-btn-icon">
+                        <svg class="icon icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="{{ icons_sprite }}#icon-camera"></use></svg>
+                    </span>
+                    <span class="cam-btn-copy">
+                        <span class="cam-btn-label">{{ c.label }}</span>
+                        <span class="cam-btn-room">{{ c.room }}</span>
+                    </span>
+                    <span class="cam-btn-status" data-tone="neutral">Analyse</span>
+                </button>
+                {% endfor %}
+            </div>
+        </aside>
+    </section>
+
+    <section class="panel section-panel">
+        <div class="section-head section-head-tight">
+            <div>
+                <p class="eyebrow eyebrow-muted">Détections</p>
+                <h2 class="section-title">Dernières captures</h2>
+                <p class="section-copy">Photos enregistrées localement lors des détections de l'alarme.</p>
+            </div>
+            <div class="section-count" id="capturesCount">—</div>
+        </div>
+        <div id="capturesGrid" class="captures-grid">
+            <div class="empty-state compact">
+                <span class="empty-badge">En attente</span>
+                <p class="empty-title">Aucune capture pour le moment</p>
+                <p class="empty-copy">Les photos des détections (alarme armée) apparaîtront ici.</p>
+            </div>
+        </div>
+    </section>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const btns = document.querySelectorAll('.cam-btn');
+const title = document.getElementById('camTitle');
+const room = document.getElementById('camRoom');
+const key = document.getElementById('camKey');
+const transport = document.getElementById('camTransport');
+const integration = document.getElementById('camIntegration');
+const camView = document.getElementById('camView');
+const stageStatus = document.getElementById('camStageStatus');
+const stageMetaBadge = document.getElementById('camStageMetaBadge');
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[char]);
+}
+
+function cameraFromButton(button) {
+  return {
+    key: button.dataset.key,
+    label: button.dataset.label,
+    room: button.dataset.room,
+    viewerUrl: button.dataset.viewerUrl,
+    viewerMode: button.dataset.viewerMode || 'iframe',
+    snapshotUrl: button.dataset.snapshotUrl,
+    transport: button.dataset.transport || 'RTSP -> HLS/WebRTC',
+    note: button.dataset.note,
+    configured: button.dataset.configured === 'true',
+    real: button.dataset.real === 'true'
+  };
+}
+
+// État d'armement (piloté par refreshCameraStates via /api/state)
+window.__armed = false;
+
+function cameraIntegrationLabel(camera) {
+  if (camera.viewerUrl) {
+    if (camera.viewerMode === 'video') {
+      return 'Lecteur vidéo direct';
+    }
+    if (camera.viewerMode === 'image') {
+      return 'Capture image directe';
+    }
+    return 'Visionneuse intégrée';
+  }
+  if (camera.snapshotUrl) {
+    return 'Prévisualisation image';
+  }
+  return 'Passerelle vidéo à brancher';
+}
+
+function cameraStageCopy(camera) {
+  if (camera.note) {
+    return camera.note;
+  }
+  if (camera.viewerUrl || camera.snapshotUrl) {
+    return `Zone ${camera.room} · la visionneuse sécurisée est prête pour ce point de vue.`;
+  }
+  return `Zone ${camera.room} · le lecteur apparaîtra ici dès que la passerelle vidéo sera raccordée.`;
+}
+
+function cameraOverlay(camera) {
+  const note = camera.note
+    ? `<p class="cam-overlay-note">${escapeHtml(camera.note)}</p>`
+    : '';
+  return `<div class="cam-overlay"><span class="cam-overlay-label">${escapeHtml(camera.label)}</span>${note}</div>`;
+}
+
+function renderPlaceholder(camera, label) {
+  return `<div class="cam-placeholder">
+      <span class="empty-badge">Mode attente</span>
+      <div class="cam-placeholder-icon">
+          <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="{{ icons_sprite }}#icon-camera"></use></svg>
+      </div>
+      <p>Flux vidéo non disponible</p>
+      <p class="muted">${escapeHtml(cameraStageCopy(camera))}</p>
+      <span class="cam-stage-pill" data-tone="gray">${escapeHtml(label || 'Analyse')}</span>
+  </div>`;
+}
+
+let liveTimer = null;
+function stopLive() {
+  if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+}
+function startLive(key) {
+  stopLive();
+  liveTimer = setInterval(() => {
+    const img = document.getElementById('liveImg');
+    if (!img) { stopLive(); return; }
+    // pré-charge la prochaine image puis l'affiche (évite le clignotement)
+    const next = new Image();
+    next.onload = () => { img.src = next.src; };
+    next.src = `/cameras/live/${encodeURIComponent(key)}?t=${Date.now()}`;
+  }, 900);
+}
+
+function renderCameraView(camera, button) {
+  if (!camView) {
+    return;
+  }
+  stopLive();
+
+  // Vue live : caméra réelle. Armé = caméra sous tension (prise Tapo) → direct.
+  // Désarmé = caméra hors tension (confidentialité) → écran d'attente.
+  if (camera.real) {
+    if (window.__armed) {
+      camView.classList.add('has-live');
+      // Pseudo-direct = snapshot JPEG rafraîchi ~1x/s (marche sur tout mobile).
+      camView.innerHTML = `<img id="liveImg" class="cam-media cam-video" src="/cameras/live/${encodeURIComponent(camera.key)}?t=${Date.now()}" alt="Direct ${escapeHtml(camera.label)}">${cameraOverlay(camera)}`;
+      startLive(camera.key);
+      return;
+    }
+    camView.classList.remove('has-live');
+    camView.innerHTML = `<div class="cam-placeholder">
+        <span class="empty-badge">Caméra éteinte</span>
+        <div class="cam-placeholder-icon"><svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="{{ icons_sprite }}#icon-camera"></use></svg></div>
+        <p>Caméra hors tension</p>
+        <p class="muted">Vous êtes à la maison (alarme désarmée) : les caméras sont coupées pour votre intimité. Armez l'alarme pour les activer.</p>
+        <span class="cam-stage-pill" data-tone="blue">Désarmé</span>
+    </div>`;
+    return;
+  }
+
+  const statusLabel = button?.dataset.stateLabel || 'Analyse';
+  camView.classList.toggle('has-live', Boolean(camera.viewerUrl || camera.snapshotUrl));
+
+  if (camera.viewerUrl) {
+    if (camera.viewerMode === 'video') {
+      camView.innerHTML = `<video class="cam-media cam-video" src="${escapeHtml(camera.viewerUrl)}" controls playsinline preload="metadata"></video>${cameraOverlay(camera)}`;
+      return;
+    }
+    if (camera.viewerMode === 'image') {
+      camView.innerHTML = `<img class="cam-media cam-image" src="${escapeHtml(camera.viewerUrl)}" alt="Flux ${escapeHtml(camera.label)}" loading="lazy">${cameraOverlay(camera)}`;
+      return;
+    }
+    camView.innerHTML = `<iframe class="cam-media cam-frame" src="${escapeHtml(camera.viewerUrl)}" title="Flux ${escapeHtml(camera.label)}" loading="lazy" referrerpolicy="no-referrer" allowfullscreen></iframe>${cameraOverlay(camera)}`;
+    return;
+  }
+
+  if (camera.snapshotUrl) {
+    camView.innerHTML = `<img class="cam-media cam-image" src="${escapeHtml(camera.snapshotUrl)}" alt="Capture ${escapeHtml(camera.label)}" loading="lazy">${cameraOverlay(camera)}`;
+    return;
+  }
+
+  camView.innerHTML = renderPlaceholder(camera, statusLabel);
+}
+
+function setSyncState(status, meta, tone) {
+  const text = document.getElementById('cameraSyncText');
+  const detail = document.getElementById('cameraSyncMeta');
+  const wrap = document.getElementById('cameraSyncState');
+  if (text) {
+    text.textContent = status;
+  }
+  if (detail) {
+    detail.textContent = meta;
+  }
+  if (wrap) {
+    wrap.dataset.state = tone;
+  }
+}
+
+function applyCameraStatus(button, device) {
+  const statusEl = button.querySelector('.cam-btn-status');
+  const camera = cameraFromButton(button);
+  const hasViewer = camera.configured;
+  const tone = hasViewer && (!device || device.status === 'unknown') ? 'blue' : (device?.color || 'gray');
+  const label = hasViewer && (!device || device.status === 'unknown') ? 'Flux prêt' : (device?.text || 'Analyse');
+  button.dataset.stateTone = tone;
+  button.dataset.stateLabel = label;
+  if (statusEl) {
+    statusEl.textContent = label;
+    statusEl.dataset.tone = tone;
+  }
+}
+
+function syncSelectedCameraStatus(button) {
+  if (!stageStatus || !button) {
+    return;
+  }
+  stageStatus.textContent = button.dataset.stateLabel || 'Analyse';
+  stageStatus.dataset.tone = button.dataset.stateTone || 'gray';
+}
+
+function select(button) {
+  const camera = cameraFromButton(button);
+  btns.forEach((item) => {
+    item.classList.remove('active');
+    item.setAttribute('aria-pressed', 'false');
+  });
+  button.classList.add('active');
+  button.setAttribute('aria-pressed', 'true');
+  title.textContent = camera.label;
+  room.textContent = cameraStageCopy(camera);
+  key.textContent = camera.key;
+  if (transport) {
+    transport.textContent = camera.transport;
+  }
+  if (integration) {
+    integration.textContent = cameraIntegrationLabel(camera);
+  }
+  if (stageMetaBadge) {
+    stageMetaBadge.textContent = camera.configured ? 'Visionneuse prête' : 'Passerelle vidéo à brancher';
+  }
+  syncSelectedCameraStatus(button);
+  renderCameraView(camera, button);
+}
+
+async function refreshCameraStates() {
+  try {
+    setSyncState('Actualisation en cours', 'Lecture de l’état des emplacements vidéo.', 'loading');
+    const response = await fetch('/api/state', {headers: {'X-Requested-With': 'fetch'}});
+    if (response.status === 401 || response.redirected) {
+      window.location.href = '/login';
+      return;
+    }
+    const payload = await response.json();
+    const cameraGroup = (payload.groups || []).find((group) => group.id === 'cameras');
+    const byKey = new Map((cameraGroup?.devices || []).map((device) => [device.key, device]));
+    btns.forEach((button) => applyCameraStatus(button, byKey.get(button.dataset.key)));
+    const activeButton = document.querySelector('.cam-btn.active');
+    syncSelectedCameraStatus(activeButton);
+    // Ne re-render la vue (donc ne relance la vidéo) que si l'état armé a changé.
+    const armed = ((payload.summary || {}).alarm || {}).state === 'armed';
+    if (armed !== window.__armed) {
+      window.__armed = armed;
+      if (activeButton) {
+        renderCameraView(cameraFromButton(activeButton), activeButton);
+      }
+    }
+    const configuredCount = Array.from(btns).filter((button) => button.dataset.configured === 'true').length;
+    setSyncState(
+      'Vue vidéo synchronisée',
+      configuredCount
+        ? `${configuredCount} point(s) caméra disposent d'une visionneuse configurée.`
+        : 'Les points caméra reflètent l’état connu du registre matériel.',
+      'ok'
+    );
+  } catch (error) {
+    setSyncState('Erreur réseau', 'Les derniers états caméra visibles sont conservés.', 'error');
+  }
+}
+
+btns.forEach((button) => button.addEventListener('click', () => select(button)));
+if (btns.length) {
+  select(btns[0]);
+} else if (camView) {
+  camView.innerHTML = renderPlaceholder({label: 'Caméra', room: 'N/A', note: ''}, 'Aucune caméra');
+}
+refreshCameraStates();
+setInterval(refreshCameraStates, 10000);
+
+// ── Galerie des dernières captures ──
+const capturesGrid = document.getElementById('capturesGrid');
+const capturesCount = document.getElementById('capturesCount');
+
+function fmtTs(ts) {
+  try { return new Date(ts * 1000).toLocaleString('fr-FR'); } catch (e) { return ''; }
+}
+
+async function refreshCaptures() {
+  try {
+    const r = await fetch('/api/captures?limit=24', {headers: {'X-Requested-With': 'fetch'}});
+    if (r.status === 401 || r.redirected) { window.location.href = '/login'; return; }
+    const items = await r.json();
+    if (capturesCount) capturesCount.textContent = items.length ? `${items.length} photo(s)` : '—';
+    if (!items.length) return;
+    capturesGrid.innerHTML = items.map((it) => {
+      const src = '/captures/' + encodeURIComponent(it.name);
+      return `<a class="capture-card" href="${src}" target="_blank" rel="noopener">
+        <img class="capture-img" src="${src}" alt="" loading="lazy" decoding="async">
+        <span class="capture-meta">${escapeHtml(fmtTs(it.ts))}</span>
+      </a>`;
+    }).join('');
+  } catch (e) { /* garder l'affichage */ }
+}
+refreshCaptures();
+setInterval(refreshCaptures, 15000);
+</script>
+{% endblock %}

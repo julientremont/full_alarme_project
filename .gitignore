@@ -139,3 +139,6 @@ data/*
 
 # pyproject.toml.bak - created by makefile
 pyproject.toml.bak
+# Sauvegardes locales et état runtime du notifier
+*.avant-notifier
+.notifier_state.json

@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+aegis.db
+aegis.db-wal
+aegis.db-shm
+uv.lock
+
+# captures locales (photos de surveillance — ne pas versionner)
+captures/
