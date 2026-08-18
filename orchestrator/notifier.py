@@ -51,6 +51,8 @@ MQTT_HOST = os.getenv("MQTT_HOST", "127.0.0.1")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 Z2M = os.getenv("MQTT_BASE_TOPIC", "zigbee2mqtt")
 GO2RTC_API = os.getenv("GO2RTC_API", "http://127.0.0.1:1984")
+CAPTURES_DIR = os.getenv("CAPTURES_DIR", os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "webapp", "captures")))
 
 REPEAT_S = int(os.getenv("NOTIFIER_REPEAT_S", "120"))        # rappel pendant intrusion
 DAILY_AT = os.getenv("NOTIFIER_DAILY_AT", "08:00")           # heure du récap
@@ -89,6 +91,26 @@ def _since(ts: float) -> str:
     if s < 86400:
         return f"{s // 3600} h {(s % 3600) // 60:02d}"
     return f"{s // 86400} j"
+
+
+def _cams_detecting(since: float) -> list[str]:
+    """Caméras ayant réellement produit une capture depuis `since`.
+
+    Déduit des fichiers écrits par l'orchestrateur (« <Label>_<Objet>_<date>.jpg »)
+    plutôt que d'un état interne : c'est la trace de ce qui a vraiment été vu.
+    """
+    out = []
+    try:
+        for f in os.listdir(CAPTURES_DIR):
+            if not f.lower().endswith(".jpg"):
+                continue
+            if os.path.getmtime(os.path.join(CAPTURES_DIR, f)) >= since:
+                cam = f.split("_", 1)[0]
+                if cam and cam not in out:
+                    out.append(cam)
+    except Exception:
+        pass
+    return out
 
 
 class Notifier:
@@ -224,7 +246,8 @@ class Notifier:
             with self.lock:
                 self.alarm_trigger = f"{label} — {detail}" if detail else label
                 trig = self.alarm_trigger
-                cams = ", ".join(self.alarm_cams) or "—"
+                debut = self.alarm_since or (time.time() - 60)
+            cams = ", ".join(_cams_detecting(debut)) or "capture en cours…"
             self.send("🚨 INTRUSION",
                       f"Déclencheur : {trig}\nHeure : {heure}\nCaméras : {cams}\n\n"
                       f"Rappel toutes les {REPEAT_S // 60} min jusqu'au désarmement.",
@@ -248,8 +271,8 @@ class Notifier:
                 self.alarm_repeats += 1
                 n = self.alarm_repeats
                 trig = self.alarm_trigger or "—"
-                cams = ", ".join(self.alarm_cams) or "aucune détection caméra"
                 depuis = _since(since)
+            cams = ", ".join(_cams_detecting(since)) or "aucune image enregistrée"
             self.send(f"🚨 INTRUSION EN COURS — rappel n°{n}",
                       f"Toujours active depuis {depuis}.\n"
                       f"Déclencheur : {trig}\nCaméras ayant détecté : {cams}\n\n"
