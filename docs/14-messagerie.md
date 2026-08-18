@@ -68,6 +68,36 @@ puis les anomalies en cours avec leur ancienneté.
 > contrôle matinal repose sur le fait que chaque capteur *répond* et annonce sa
 > batterie, ce qui est vérifiable sans ambiguïté.
 
+## Deux pièges corrigés le 18/08 (après retour terrain)
+
+**1. Faux positif caméras à chaque armement.** L'armement rallume les prises
+Tapo : les caméras mettent 30-60 s à démarrer. Le contrôle santé les déclarait
+en panne dans cet intervalle. Un délai de grâce `NOTIFIER_CAMERA_BOOT_S`
+(240 s) suspend leur vérification après un armement.
+
+**2. Un capteur muet passait pour vivant.** Le service datait chaque capteur à
+l'heure de RÉCEPTION du message. Or au démarrage, le broker relivre les
+messages **retenus** : un capteur silencieux depuis dix jours paraissait avoir
+parlé à l'instant, batterie « 100 % » comprise — valeur figée au dernier
+contact réel. Le récapitulatif affirmait donc « en marche » sans aucune preuve,
+en contradiction avec l'application (qui, elle, mesure depuis son propre
+démarrage et disait vrai).
+
+Correction : `last_seen` a été activé dans Zigbee2MQTT (à chaud, via
+`zigbee2mqtt/bridge/request/options`, sans redémarrage). Chaque payload porte
+désormais la date réelle du dernier contact radio. Le récapitulatif distingue
+trois cas :
+
+| Affichage | Signification |
+|---|---|
+| ✅ « vu il y a X » | contact radio horodaté et récent — **prouvé** |
+| ❔ « dernier contact inconnu » | seule une valeur retenue est disponible — **on ne sait pas** |
+| ❌ « MUET depuis X » | horodatage fiable et trop ancien — **panne confirmée** |
+
+> Règle retenue : ne jamais présenter une donnée mémorisée comme une mesure
+> fraîche. Un tableau de bord qui affiche « tout va bien » sans preuve est plus
+> dangereux qu'un tableau de bord qui affiche « je ne sais pas ».
+
 ## Réglages (vault ou `orchestrator/.env`)
 
 | Variable | Défaut | Rôle |
@@ -77,6 +107,7 @@ puis les anomalies en cours avec leur ancienneté.
 | `NOTIFIER_HEALTH_EVERY_S` | `60` | fréquence du contrôle matériel |
 | `NOTIFIER_SENSOR_MUTE_H` | `6` | silence capteur (h) considéré comme anormal |
 | `NOTIFIER_NODE_TIMEOUT_S` | `300` | silence routeur/prise (s) considéré comme anormal |
+| `NOTIFIER_CAMERA_BOOT_S` | `240` | délai de grâce caméras après un armement |
 | `AEGIS_ORCH_NOTIFY` | `0` | remettre l'envoi dans l'orchestrateur (doublons) |
 
 Destinataires : table `recipients` de `aegis.db` (gérée dans /admin), avec

@@ -59,6 +59,10 @@ DAILY_AT = os.getenv("NOTIFIER_DAILY_AT", "08:00")           # heure du récap
 HEALTH_EVERY_S = int(os.getenv("NOTIFIER_HEALTH_EVERY_S", "60"))
 SENSOR_MUTE_H = int(os.getenv("NOTIFIER_SENSOR_MUTE_H", "6"))    # capteur sans nouvelle
 NODE_TIMEOUT_S = int(os.getenv("NOTIFIER_NODE_TIMEOUT_S", "300"))  # routeurs/prises
+# À l'armement, les prises Tapo remettent les caméras sous tension : elles
+# mettent ~30-60 s à démarrer et à publier un flux. Sans ce délai de grâce, le
+# contrôle santé les déclare en panne à chaque armement (faux positif observé).
+CAMERA_BOOT_S = int(os.getenv("NOTIFIER_CAMERA_BOOT_S", "240"))
 STATE_FILE = os.path.join(os.path.dirname(__file__), ".notifier_state.json")
 DEVICES_YAML = os.path.join(os.path.dirname(__file__), "..", "webapp", "devices.yaml")
 FR = {"armed": "ARMÉE", "disarmed": "DÉSARMÉE"}
@@ -119,7 +123,8 @@ class Notifier:
         self.labels = _labels()
         self.alarm = {"state": "unknown", "mode": "idle"}
         self.z2m: dict[str, dict] = {}        # friendly_name -> payload
-        self.seen: dict[str, float] = {}      # friendly_name -> dernier message
+        self.seen: dict[str, float] = {}      # friendly_name -> dernier contact réel
+        self.seen_sure: dict[str, bool] = {}  # l'horodatage est-il fiable (last_seen) ?
         self.contact_change: dict[str, float] = {}  # dernier changement ouvert/fermé
         self.plugs: dict[str, dict] = {}
         self.sirene: dict = {}
@@ -202,10 +207,17 @@ class Notifier:
                 d = json.loads(payload)
                 if not isinstance(d, dict):
                     return
+                # `last_seen` (activé dans Z2M) porte la date réelle du dernier
+                # contact radio. L'heure de réception ne vaut rien : au démarrage
+                # le broker relivre des messages RETENUS vieux de plusieurs jours,
+                # ce qui faisait passer pour vivant un capteur muet depuis 10 j.
+                ls = d.get("last_seen")
+                horodate = isinstance(ls, (int, float))
                 with self.lock:
                     prev = self.z2m.get(name)
                     self.z2m[name] = d
-                    self.seen[name] = time.time()
+                    self.seen[name] = (ls / 1000.0) if horodate else time.time()
+                    self.seen_sure[name] = horodate
                     if "contact" in d and (not prev or prev.get("contact") != d["contact"]):
                         self.contact_change[name] = time.time()
         except Exception as e:
@@ -296,6 +308,8 @@ class Notifier:
         # Les capteurs Aqara ne parlent que toutes les ~1 h : avant ce délai on
         # ne peut pas conclure qu'un silence est anormal.
         jeune = (now - self.started) < (SENSOR_MUTE_H * 3600)
+        depuis_armement = now - (self.alarm.get("since") or 0)
+        cams_en_demarrage = armed and depuis_armement < CAMERA_BOOT_S
 
         if not self.bridge_online:
             bad["bridge"] = "Coordinateur Zigbee hors-ligne (plus aucun capteur supervisé)"
@@ -314,11 +328,12 @@ class Notifier:
 
                 if src == "zigbee":
                     last = seen.get(key)
+                    sure = self.seen_sure.get(key, False)
                     limit = NODE_TIMEOUT_S if kind == "router" else SENSOR_MUTE_H * 3600
                     if last is None:
                         if not jeune:
                             bad[f"z:{key}"] = f"{label} : aucune remontée"
-                    elif now - last > limit:
+                    elif sure and now - last > limit:
                         bad[f"z:{key}"] = f"{label} : muet depuis {_since(last)}"
                     bat = (z2m.get(key) or {}).get("battery")
                     if isinstance(bat, (int, float)) and bat < 20:
@@ -333,8 +348,9 @@ class Notifier:
 
                 elif src == "camera" and d.get("real"):
                     # Désarmé, les caméras sont hors tension (prises coupées) :
-                    # leur silence est normal, on ne le signale pas.
-                    if armed and not self._camera_ok(key):
+                    # leur silence est normal, on ne le signale pas. Après un
+                    # armement, on laisse CAMERA_BOOT_S le temps du démarrage.
+                    if armed and not cams_en_demarrage and not self._camera_ok(key):
                         bad[f"c:{key}"] = f"Caméra {label} : pas d'image"
 
                 elif src == "siren":
@@ -395,21 +411,43 @@ class Notifier:
         # ── Capteurs d'ouverture : un par ligne, avec batterie ──
         caps = [d for g in _registry() for d in g["devices"]
                 if d.get("source") == "zigbee" and d.get("kind") == "contact"]
-        vivants = [d for d in caps if seen.get(d["key"])]
-        L.append(f"CAPTEURS — {len(vivants)}/{len(caps)} en marche")
+        now = time.time()
+        limite = SENSOR_MUTE_H * 3600
+        # « Confirmé » = contact radio horodaté par Z2M et récent. Une valeur
+        # simplement mémorisée par le broker ne prouve rien sur l'état actuel.
+        confirmes = [d for d in caps
+                     if self.seen_sure.get(d["key"])
+                     and (now - seen.get(d["key"], 0)) <= limite]
+        inconnus = [d for d in caps if not self.seen_sure.get(d["key"])]
+        entete = f"CAPTEURS — {len(confirmes)}/{len(caps)} confirmés en marche"
+        if inconnus:
+            entete += f" ({len(inconnus)} en attente de leur prochain signal)"
+        L.append(entete)
         for d in caps:
             key, label = d["key"], d.get("label", d["key"])
             st = z2m.get(key) or {}
             last = seen.get(key)
+            sure = self.seen_sure.get(key, False)
             if last is None:
                 L.append(f"  ❌ {label} : NE RÉPOND PAS")
                 continue
             bat = st.get("battery")
             bat_txt = f"{bat}%" if isinstance(bat, (int, float)) else "?"
             ouvert = st.get("contact") is False
-            icone = "🟠" if ouvert else "✅"
-            L.append(f"  {icone} {label} : en marche — "
-                     f"{'OUVERT' if ouvert else 'fermé'} — batterie {bat_txt}")
+            age = now - last
+            if not sure:
+                # aucun horodatage : on ne peut RIEN affirmer sur ce capteur
+                L.append(f"  ❔ {label} : dernier contact inconnu — "
+                         f"{'ouvert' if ouvert else 'fermé'} (valeur mémorisée), "
+                         f"batterie {bat_txt}")
+            elif age > limite:
+                L.append(f"  ❌ {label} : MUET depuis {_since(last)} "
+                         f"(dernière valeur : {'ouvert' if ouvert else 'fermé'}, "
+                         f"batterie {bat_txt})")
+            else:
+                L.append(f"  {'🟠' if ouvert else '✅'} {label} : en marche — "
+                         f"{'OUVERT' if ouvert else 'fermé'} — batterie {bat_txt} "
+                         f"— vu il y a {_since(last)}")
 
         # ── Caméras ──
         cams = [d for g in _registry() for d in g["devices"]
