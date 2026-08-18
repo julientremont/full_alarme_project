@@ -98,6 +98,22 @@ trois cas :
 > fraîche. Un tableau de bord qui affiche « tout va bien » sans preuve est plus
 > dangereux qu'un tableau de bord qui affiche « je ne sais pas ».
 
+**3. Une panne annoncée puis démentie deux minutes plus tard.** Un unique
+contrôle en échec suffisait à déclarer un équipement en panne. Or un snapshot
+go2rtc échoue ponctuellement (reconnexion RTSP, Pi chargé par YOLO sur quatre
+flux) : d'où un « ⚠️ Caméra Cuisine : pas d'image » à 07:15 suivi d'un
+« ✅ Rétabli » à 07:17, sans qu'il ne se soit rien passé.
+
+Correction : une panne doit être **confirmée sur `NOTIFIER_FAULT_STREAK`
+contrôles consécutifs** (3, soit ~3 min) avant d'alerter, et `_camera_ok()`
+retente une fois après 2 s. Un hoquet isolé ne produit plus aucun message.
+Le message de rétablissement nomme désormais l'équipement au lieu de répéter
+le défaut (« Caméra Cuisine : de nouveau opérationnel », et non l'absurde
+« ✅ Rétabli — Caméra Cuisine : pas d'image »).
+
+> Une alerte qui se dément toute seule détruit la confiance dans le canal :
+> après deux ou trois fausses alertes, plus personne ne lit les vraies.
+
 ## Réglages (vault ou `orchestrator/.env`)
 
 | Variable | Défaut | Rôle |
@@ -108,6 +124,7 @@ trois cas :
 | `NOTIFIER_SENSOR_MUTE_H` | `6` | silence capteur (h) considéré comme anormal |
 | `NOTIFIER_NODE_TIMEOUT_S` | `300` | silence routeur/prise (s) considéré comme anormal |
 | `NOTIFIER_CAMERA_BOOT_S` | `240` | délai de grâce caméras après un armement |
+| `NOTIFIER_FAULT_STREAK` | `3` | contrôles consécutifs en échec avant d'alerter |
 | `AEGIS_ORCH_NOTIFY` | `0` | remettre l'envoi dans l'orchestrateur (doublons) |
 
 Destinataires : table `recipients` de `aegis.db` (gérée dans /admin), avec

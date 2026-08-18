@@ -63,6 +63,11 @@ NODE_TIMEOUT_S = int(os.getenv("NOTIFIER_NODE_TIMEOUT_S", "300"))  # routeurs/pr
 # mettent ~30-60 s à démarrer et à publier un flux. Sans ce délai de grâce, le
 # contrôle santé les déclare en panne à chaque armement (faux positif observé).
 CAMERA_BOOT_S = int(os.getenv("NOTIFIER_CAMERA_BOOT_S", "240"))
+# Nombre de contrôles consécutifs en échec avant de crier à la panne. Un
+# snapshot go2rtc peut échouer ponctuellement (reconnexion RTSP, Pi chargé par
+# YOLO) : sans cette confirmation, un simple hoquet déclenchait une alerte
+# suivie d'un « rétabli » deux minutes plus tard.
+FAULT_STREAK = int(os.getenv("NOTIFIER_FAULT_STREAK", "3"))
 STATE_FILE = os.path.join(os.path.dirname(__file__), ".notifier_state.json")
 DEVICES_YAML = os.path.join(os.path.dirname(__file__), "..", "webapp", "devices.yaml")
 FR = {"armed": "ARMÉE", "disarmed": "DÉSARMÉE"}
@@ -136,6 +141,7 @@ class Notifier:
         self.alarm_repeats = 0
         # Anomalies : clé -> {"since": ts, "text": str}
         self.faults: dict[str, dict] = {}
+        self._streak: dict[str, int] = {}   # échecs consécutifs par équipement
         self.started = time.time()
         self._load()
         self.client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
@@ -293,12 +299,19 @@ class Notifier:
 
     # ─── surveillance du matériel ────────────────────────────────────────────
     def _camera_ok(self, key: str) -> bool:
-        try:
-            req = urllib.request.Request(f"{GO2RTC_API}/api/frame.jpeg?src={key}")
-            with urllib.request.urlopen(req, timeout=8) as r:
-                return r.status == 200 and len(r.read()) > 2000
-        except Exception:
-            return False
+        """Vrai si la caméra rend une image. Deux tentatives : le premier appel
+        peut échouer le temps que go2rtc rétablisse le flux RTSP."""
+        for essai in range(2):
+            try:
+                req = urllib.request.Request(f"{GO2RTC_API}/api/frame.jpeg?src={key}")
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    if r.status == 200 and len(r.read()) > 2000:
+                        return True
+            except Exception:
+                pass
+            if essai == 0:
+                time.sleep(2)
+        return False
 
     def _scan(self) -> dict:
         """Retourne {clé_anomalie: texte} pour tout ce qui ne va pas."""
@@ -367,12 +380,23 @@ class Notifier:
             try:
                 bad = self._scan()
                 now = time.time()
+
+                # Confirmation : on ne déclare une panne qu'après FAULT_STREAK
+                # contrôles consécutifs en échec.
+                for k in list(self._streak):
+                    if k not in bad:
+                        del self._streak[k]
+                for k in bad:
+                    self._streak[k] = self._streak.get(k, 0) + 1
+
                 nouvelles = []
                 for k, txt in bad.items():
-                    if k not in self.faults:
+                    if self._streak[k] >= FAULT_STREAK and k not in self.faults:
                         self.faults[k] = {"since": now, "text": txt}
                         nouvelles.append(txt)
-                resolues = [self.faults[k]["text"] for k in list(self.faults) if k not in bad]
+                # Rétablissement : nommer l'équipement, pas répéter le défaut.
+                resolues = [self.faults[k]["text"].split(" : ")[0]
+                            for k in list(self.faults) if k not in bad]
                 for k in list(self.faults):
                     if k not in bad:
                         del self.faults[k]
@@ -384,7 +408,7 @@ class Notifier:
                               f"{corps}\n\nRappelé dans le récapitulatif quotidien "
                               f"tant que ce n'est pas résolu.", "fault")
                 if resolues:
-                    corps = "\n".join(f"• {t}" for t in resolues)
+                    corps = "\n".join(f"• {t} : de nouveau opérationnel" for t in resolues)
                     self.send(f"✅ Rétabli à {_hhmm(now)}", corps, "fault-ok")
             except Exception as e:
                 log.error("health : %s", str(e)[:150])
